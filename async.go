@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-type Method func(ctx context.Context, args interface{}) (interface{}, error)
+type Method func(ctx context.Context, args ...interface{}) (interface{}, error)
 
 func Lambda(method func() (interface{}, error), timeout time.Duration) (interface{}, error) {
 	output := make(chan interface{})
@@ -57,9 +57,9 @@ func Lambda(method func() (interface{}, error), timeout time.Duration) (interfac
 	}
 }
 
-func Call(m Method, ctx context.Context, args interface{}, timeout time.Duration) (interface{}, error) {
+func Call(m Method, ctx context.Context, timeout time.Duration, args ...interface{}) (interface{}, error) {
 	return Lambda(func() (interface{}, error) {
-		return m(ctx, args)
+		return m(ctx, args...)
 	}, timeout)
 }
 
@@ -82,17 +82,17 @@ func All(methods []func() (interface{}, error), timeout time.Duration) []interfa
 	return result
 }
 
-func Serise(enter Method, ctx context.Context, args interface{}, methods []Method, timeout time.Duration) (interface{}, error) {
+func Serise(enter Method, ctx context.Context, args []interface{}, methods []Method, timeout time.Duration) (interface{}, error) {
 	var (
 		res interface{}
 		err error
 	)
-	res, err = Call(enter, ctx, args, timeout)
+	res, err = Call(enter, ctx, timeout, args...)
 	if err != nil {
 		return nil, err
 	}
 	for _, m := range methods {
-		res, err = Call(m, ctx, res, timeout)
+		res, err = Call(m, ctx, timeout, res)
 		if err != nil {
 			return nil, err
 		}
