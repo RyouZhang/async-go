@@ -8,8 +8,9 @@ import (
 )
 
 type Method func(ctx context.Context, args ...interface{}) (interface{}, error)
+type LambdaMethod func() (interface{}, error)
 
-func Lambda(method func() (interface{}, error), timeout time.Duration) (interface{}, error) {
+func Lambda(method LambdaMethod, timeout time.Duration) (interface{}, error) {
 	output := make(chan interface{})
 	go func() {
 		defer close(output)
@@ -58,17 +59,17 @@ func Lambda(method func() (interface{}, error), timeout time.Duration) (interfac
 }
 
 func Call(m Method, ctx context.Context, timeout time.Duration, args ...interface{}) (interface{}, error) {
-	return Lambda(func() (interface{}, error) {
+	return Lambda(LambdaMethod {
 		return m(ctx, args...)
 	}, timeout)
 }
 
-func All(methods []func() (interface{}, error), timeout time.Duration) []interface{} {
+func All(methods []LambdaMethod, timeout time.Duration) []interface{} {
 	var wg sync.WaitGroup
 	result := make([]interface{}, len(methods))
 	for i, m := range methods {
 		wg.Add(1)
-		go func(index int, method func() (interface{}, error)) {
+		go func(index int, method LambdaMethod) {
 			defer wg.Done()
 			res, err := Lambda(method, timeout)
 			if err != nil {
@@ -100,7 +101,7 @@ func Serise(enter Method, ctx context.Context, args []interface{}, methods []Met
 	return res, nil
 }
 
-func Any(methods []func() (interface{}, error), timeout time.Duration) ([]interface{}, error) {
+func Any(methods []LambdaMethod, timeout time.Duration) ([]interface{}, error) {
 	resChan := make(chan []interface{})
 	errChan := make(chan error)
 	go func() {
@@ -112,7 +113,7 @@ func Any(methods []func() (interface{}, error), timeout time.Duration) ([]interf
 		result := make([]interface{}, len(methods))
 		for i, m := range methods {
 			wg.Add(1)
-			go func(index int, method func() (interface{}, error)) {
+			go func(index int, method LambdaMethod) {
 				defer wg.Done()
 				res, err := Lambda(method, timeout)
 				if err != nil {
