@@ -59,7 +59,7 @@ func Lambda(method LambdaMethod, timeout time.Duration) (interface{}, error) {
 }
 
 func Call(m Method, ctx context.Context, timeout time.Duration, args ...interface{}) (interface{}, error) {
-	return Lambda(LambdaMethod {
+	return Lambda(func() (interface{}, error) {
 		return m(ctx, args...)
 	}, timeout)
 }
