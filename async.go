@@ -21,7 +21,7 @@ func Lambda(method LambdaMethod, timeout time.Duration) (interface{}, error) {
 			output <- res
 		}
 	}()
-	if timeout <= 0 {
+	if timeout > 0 {
 		timer := time.NewTimer(timeout)
 		defer timer.Stop()
 		select {
