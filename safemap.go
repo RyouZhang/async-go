@@ -1,5 +1,10 @@
 package async
 
+import (
+	"sync"
+	"errors"
+)
+
 type safeMapAction struct {
 	action   int8 //0 get, 1 put, 2 del
 	keys     []string
