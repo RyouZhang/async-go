@@ -10,7 +10,7 @@ import (
 type Method func(ctx context.Context, args ...interface{}) (interface{}, error)
 type LambdaMethod func() (interface{}, error)
 
-func Lambda(method LambdaMethod, timeout time.Duration) (interface{}, error) {
+func Lambda(method func()(interface{}, error), timeout time.Duration) (interface{}, error) {
 	output := make(chan interface{})
 	go func() {
 		defer close(output)
@@ -83,7 +83,21 @@ func All(methods []LambdaMethod, timeout time.Duration) []interface{} {
 	return result
 }
 
-func Serise(enter Method, ctx context.Context, args []interface{}, methods []Method, timeout time.Duration) (interface{}, error) {
+func Serise(methods []LambdaMethod, timeout time.Duration) []interface{} {
+	result := make([]interface{}, 0)
+	for _, m := range methods {
+		res, err := Lambda(m, timeout)
+		if err != nil {
+			result = append(result, err)
+			return result
+		} else {
+			result = append(result, res)
+		}
+	}
+	return result
+}
+
+func Flow(enter Method, ctx context.Context, args []interface{}, methods []Method, timeout time.Duration) (interface{}, error) {
 	var (
 		res interface{}
 		err error
