@@ -23,15 +23,15 @@ func main() {
 		err error
 	)
 
-	f := func() (interface{}, error) {
+	f1 := func() (interface{}, error) {
 		z := test_func(2, 3)
 		return z, nil
 	}
 	//working well
-	res, err = async.Lambda(f, 5 * time.Second)
+	res, err = async.Lambda(f1, 5 * time.Second)
 	fmt.Println(res, err)
 	//now timeout trigger
-	res, err = async.Lambda(f, 50 * time.Millisecond)
+	res, err = async.Lambda(f1, 50 * time.Millisecond)
 	fmt.Println(res, err)
 	
 	f2 := func() (interface{}, error) {
@@ -40,13 +40,14 @@ func main() {
 	}
 
 	//for parallel
-	res = async.All([]async.LambdaMethod{f, f2}, 2 * time.Second)
+	res = async.All([]async.LambdaMethod{f1, f2}, 2 * time.Second)
 	fmt.Println(res)
 
-	res = async.All([]async.LambdaMethod{f, f2}, 5 * time.Second)
+	res = async.All([]async.LambdaMethod{f1, f2}, 5 * time.Second)
 	fmt.Println(res)
 
 	//for any, one error all error
-	res, err = async.Any([]async.LambdaMethod{f, f2}, 2 * time.Second)
+	res, err = async.Any([]async.LambdaMethod{f1, 1
+						  2}, 2 * time.Second)
 	fmt.Println(res, err)
 }
