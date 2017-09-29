@@ -15,7 +15,7 @@ type safeMapAction struct {
 type SafeMap struct {
 	data      map[string]interface{}
 	input     chan safeMapAction
-	desLock   sync.Mutex
+	desLock   sync.RWMutex
 	isDestory bool
 }
 
@@ -76,14 +76,14 @@ func (sm *SafeMap) Get(key string) (interface{}, error) {
 }
 
 func (sm *SafeMap) MGet(keys []string) map[string]interface{} {
-	sm.desLock.Lock()
+	sm.desLock.RLock()
 	if sm.isDestory == false {
 		callback := make(chan map[string]interface{}, 1)
 		sm.input <- safeMapAction{
 			action:   0,
 			keys:     keys,
 			callback: callback}
-		sm.desLock.Unlock()
+		sm.desLock.RUnlock()
 
 		defer close(callback)
 		select {
@@ -93,7 +93,7 @@ func (sm *SafeMap) MGet(keys []string) map[string]interface{} {
 			}
 		}
 	} else {
-		sm.desLock.Unlock()
+		sm.desLock.RUnlock()
 		return nil
 	}
 }
@@ -103,8 +103,8 @@ func (sm *SafeMap) Set(key string, value interface{}) {
 }
 
 func (sm *SafeMap) MSet(keys []string, values []interface{}) {
-	sm.desLock.Lock()
-	defer sm.desLock.Unlock()
+	sm.desLock.RLock()
+	defer sm.desLock.RUnlock()
 	if sm.isDestory == false {
 		sm.input <- safeMapAction{
 			action: 1,
@@ -118,8 +118,8 @@ func (sm *SafeMap) Del(key string) {
 }
 
 func (sm *SafeMap) Mdel(keys []string) {
-	sm.desLock.Lock()
-	defer sm.desLock.Unlock()
+	sm.desLock.RLock()
+	defer sm.desLock.RUnlock()
 	if sm.isDestory == false {
 		sm.input <- safeMapAction{
 			action: 2,
