@@ -3,7 +3,6 @@ package async
 import (
 	"time"
 	"fmt"
-	"github.com/RyouZhang/async-go"
 )
 
 func test_func(x, y int) int {
