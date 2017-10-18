@@ -205,7 +205,7 @@ func (c *TTLCache) Keys() []interface{} {
 	callback := make(chan []interface{})
 	defer close(callback)
 	c.desLock.RLock()
-	c.queue <- command{action: 3}
+	c.queue <- command{action: 3, callback: callback}
 	c.desLock.RUnlock()
 	return <-callback
 }
