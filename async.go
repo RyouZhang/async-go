@@ -14,6 +14,11 @@ func Lambda(method func()(interface{}, error), timeout time.Duration) (interface
 	output := make(chan interface{})
 	go func() {
 		defer close(output)
+		defer func() {
+			if e := recover(); e != nil {
+				output <- e.(error)
+			}
+		}()		
 		res, err := method()
 		if err != nil {
 			output <- err
