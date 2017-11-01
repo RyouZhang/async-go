@@ -152,3 +152,36 @@ func Any(methods []LambdaMethod, timeout time.Duration) ([]interface{}, error) {
 		return res, nil
 	}
 }
+
+func AnyOne(methods []LambdaMethod, timeout time.Duration) (interface{}, []error) {
+	resChan := make(chan interface{})
+	errChan := make(chan []error)
+	go func() {
+		defer func() {
+			close(resChan)
+			close(errChan)
+		}()
+		var wg sync.WaitGroup
+		errs := make([]error, len(methods))
+		for i, m := range methods {
+			wg.Add(1)
+			go func(index int, method LambdaMethod) {
+				defer wg.Done()
+				res, err := Lambda(method, timeout)
+				if err != nil {
+					errs[index] = err
+				} else {
+					resChan <- res
+				}
+			}(i, m)
+		}
+		wg.Wait()
+		errChan <- errs
+	}()
+	select {
+	case errs := <-errChan:
+		return nil, errs
+	case res := <-resChan:
+		return res, nil
+	}
+}
