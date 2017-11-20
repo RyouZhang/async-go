@@ -63,6 +63,9 @@ func (kv *KVData) updateLRU(keys []interface{}) {
 }
 
 func (kv *KVData) updateTTL() {
+	if kv.ttl <= 0 {
+		return
+	}
 	now := time.Now().Unix()
 	for {
 		if kv.keys.Len() == 0 {
