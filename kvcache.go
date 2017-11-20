@@ -200,7 +200,9 @@ func (kv *KVCache) runloop() {
 			}
 		case <-timer.C:
 			{
-				kv.data.updateTTL()
+				if kv.data.ttl > 0 {
+					kv.data.updateTTL()
+				}
 				timer.Reset(1 * time.Second)
 			}
 		case op := <-kv.queue:
