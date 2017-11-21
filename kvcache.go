@@ -230,6 +230,7 @@ End:
 func (kv *KVCache) Commit(method func(*KVData) (interface{}, error)) (interface{}, error) {
 	kv.desLock.RLock()
 	if kv.isDestory {
+		kv.desLock.RUnlock()
 		return nil, errors.New("Invalid KVCache")
 	}
 	output := make(chan interface{})
