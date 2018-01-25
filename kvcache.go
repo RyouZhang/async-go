@@ -101,13 +101,36 @@ func (kv *KVData) Set(key interface{}, value interface{}) {
 func (kv *KVData) MSet(keys []interface{}, values []interface{}) {
 	defer kv.drain()
 	for i, key := range keys {
-		kv.pairs[key] = values[i]
+		kv.pairs[key] = value
+
+		ele, ok := kv.index[key]
+		if ok {
+			kv.keys.MoveToFront(ele)
+			info := ele.Value.(*keyInfo)
+			info.expire = time.Now().Unix() + kv.ttl
+		} else {
+			info := &keyInfo{key: key, expire: time.Now().Unix() + kv.ttl}
+			kv.keys.PushBack(info)
+			kv.index[key] = kv.keys.Back()
+		}
 	}
 }
 
 func (kv *KVData) Merge(pairs map[interface{}]interface{}) {
+	defer kv.drain()
 	for key, value := range pairs {
 		kv.pairs[key] = value
+
+		ele, ok := kv.index[key]
+		if ok {
+			kv.keys.MoveToFront(ele)
+			info := ele.Value.(*keyInfo)
+			info.expire = time.Now().Unix() + kv.ttl
+		} else {
+			info := &keyInfo{key: key, expire: time.Now().Unix() + kv.ttl}
+			kv.keys.PushBack(info)
+			kv.index[key] = kv.keys.Back()
+		}
 	}
 }
 
