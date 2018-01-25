@@ -121,8 +121,8 @@ func Flow(enter Method, ctx context.Context, args []interface{}, methods []Metho
 }
 
 func Any(methods []LambdaMethod, timeout time.Duration) ([]interface{}, error) {
-	resChan := make(chan []interface{})
-	errChan := make(chan error)
+	resChan := make(chan []interface{}, 1)
+	errChan := make(chan error, len(methods))
 	go func() {
 		defer func() {
 			close(resChan)
@@ -154,7 +154,7 @@ func Any(methods []LambdaMethod, timeout time.Duration) ([]interface{}, error) {
 }
 
 func AnyOne(methods []LambdaMethod, timeout time.Duration) (interface{}, []error) {
-	resChan := make(chan interface{})
+	resChan := make(chan interface{}, len(methods))
 	errChan := make(chan []error)
 	go func() {
 		defer func() {
