@@ -101,7 +101,7 @@ func (kv *KVData) Set(key interface{}, value interface{}) {
 func (kv *KVData) MSet(keys []interface{}, values []interface{}) {
 	defer kv.drain()
 	for i, key := range keys {
-		kv.pairs[key] = values[index]
+		kv.pairs[key] = values[i]
 
 		ele, ok := kv.index[key]
 		if ok {
