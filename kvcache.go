@@ -183,6 +183,20 @@ func (kv *KVData) Keys() []interface{} {
 	return keys
 }
 
+func (kv *KVData) Clean() {
+	for {		
+		ele := kv.keys.Front()
+		if ele == nil {
+			return
+		}		
+		info := ele.Value.(*keyInfo)
+		kv.keys.Remove(ele)
+		delete(kv.index, info.key)
+		delete(kv.pairs, info.key)
+	}
+}
+
+
 type KVCache struct {
 	data      *KVData
 	queue     chan operation
