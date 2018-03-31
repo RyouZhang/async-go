@@ -1,13 +1,12 @@
 package async
 
 import (
-	"context"
 	"errors"
 	"sync"
 	"time"
 )
 
-type Method func(ctx context.Context, args ...interface{}) (interface{}, error)
+type Method func(args ...interface{}) (interface{}, error)
 type LambdaMethod func() (interface{}, error)
 
 func Lambda(method func()(interface{}, error), timeout time.Duration) (interface{}, error) {
@@ -63,9 +62,9 @@ func Lambda(method func()(interface{}, error), timeout time.Duration) (interface
 	}
 }
 
-func Call(m Method, ctx context.Context, timeout time.Duration, args ...interface{}) (interface{}, error) {
+func Call(m Method, timeout time.Duration, args ...interface{}) (interface{}, error) {
 	return Lambda(func() (interface{}, error) {
-		return m(ctx, args...)
+		return m(args...)
 	}, timeout)
 }
 
@@ -102,17 +101,17 @@ func Serise(methods []LambdaMethod, timeout time.Duration) []interface{} {
 	return result
 }
 
-func Flow(enter Method, ctx context.Context, args []interface{}, methods []Method, timeout time.Duration) (interface{}, error) {
+func Flow(enter Method, args []interface{}, methods []Method, timeout time.Duration) (interface{}, error) {
 	var (
 		res interface{}
 		err error
 	)
-	res, err = Call(enter, ctx, timeout, args...)
+	res, err = Call(enter, timeout, args...)
 	if err != nil {
 		return nil, err
 	}
 	for _, m := range methods {
-		res, err = Call(m, ctx, timeout, res)
+		res, err = Call(m, timeout, res)
 		if err != nil {
 			return nil, err
 		}
