@@ -9,7 +9,7 @@ import (
 type Method func(args ...interface{}) (interface{}, error)
 type LambdaMethod func() (interface{}, error)
 
-func Lambda(method func()(interface{}, error), timeout time.Duration) (interface{}, error) {
+func Lambda(method func() (interface{}, error), timeout time.Duration) (interface{}, error) {
 	output := make(chan interface{})
 	go func() {
 		defer close(output)
@@ -17,7 +17,7 @@ func Lambda(method func()(interface{}, error), timeout time.Duration) (interface
 			if e := recover(); e != nil {
 				output <- e.(error)
 			}
-		}()		
+		}()
 		res, err := method()
 		if err != nil {
 			output <- err
@@ -183,4 +183,35 @@ func AnyOne(methods []LambdaMethod, timeout time.Duration) (interface{}, []error
 	case res := <-resChan:
 		return res, nil
 	}
+}
+
+func Parallel(methods []LambdaMethod, maxCount int) []interface{} {
+	if maxCount <= 0 {
+		maxCount = 1
+	}
+	var wg sync.WaitGroup
+	workers := make(chan bool, maxCount)
+	for i := 0; i < maxCount; i++ {
+		workers <- true
+	}
+	results := make([]interface{}, len(methods))
+	for index, method := range methods {
+		<-workers
+		wg.Add(1)
+		go func(i int, m LambdaMethod) {
+			defer func() {
+				workers <- true
+				wg.Done()
+			}()
+			res, err := Lambda(m, 0)
+			if err != nil {
+				results[i] = err
+			} else {
+				results[i] = res
+			}
+		}(index, method)
+	}
+	wg.Wait()
+	close(workers)
+	return results
 }
