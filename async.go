@@ -9,12 +9,21 @@ import (
 type Method func(args ...interface{}) (interface{}, error)
 type LambdaMethod func() (interface{}, error)
 
+var panicHandler func()
+
+func SetPanicHandler(hanlder func()) {
+	panicHandler = hanlder
+}
+
 func Lambda(method func() (interface{}, error), timeout time.Duration) (interface{}, error) {
 	output := make(chan interface{})
 	go func() {
 		defer close(output)
 		defer func() {
-			if e := recover(); e != nil {
+			if e := recover(); e != nil {	
+				if panicHandler != nil {
+					panicHandler()
+				}		
 				output <- e.(error)
 			}
 		}()
