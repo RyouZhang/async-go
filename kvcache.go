@@ -88,7 +88,7 @@ func (kv *KVData) Set(key interface{}, value interface{}) {
 
 	ele, ok := kv.index[key]
 	if ok {
-		kv.keys.MoveToFront(ele)
+		kv.keys.MoveToBack(ele)
 		info := ele.Value.(*keyInfo)
 		info.expire = time.Now().Unix() + kv.ttl
 	} else {
@@ -105,7 +105,7 @@ func (kv *KVData) MSet(keys []interface{}, values []interface{}) {
 
 		ele, ok := kv.index[key]
 		if ok {
-			kv.keys.MoveToFront(ele)
+			kv.keys.MoveToBack(ele)
 			info := ele.Value.(*keyInfo)
 			info.expire = time.Now().Unix() + kv.ttl
 		} else {
@@ -123,7 +123,7 @@ func (kv *KVData) Merge(pairs map[interface{}]interface{}) {
 
 		ele, ok := kv.index[key]
 		if ok {
-			kv.keys.MoveToFront(ele)
+			kv.keys.MoveToBack(ele)
 			info := ele.Value.(*keyInfo)
 			info.expire = time.Now().Unix() + kv.ttl
 		} else {
