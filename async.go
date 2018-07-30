@@ -1,6 +1,7 @@
 package async
 
 import (
+	"fmt"
 	"errors"
 	"sync"
 	"time"
@@ -24,7 +25,7 @@ func Lambda(method func() (interface{}, error), timeout time.Duration) (interfac
 				if panicHandler != nil {
 					panicHandler()
 				}		
-				output <- e.(error)
+				output <- errors.New(fmt.Sprintf("%s",e))
 			}
 		}()
 		res, err := method()
