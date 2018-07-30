@@ -16,6 +16,18 @@ func SetPanicHandler(hanlder func()) {
 	panicHandler = hanlder
 }
 
+func Safety(method func() (interface{}, error)) (res interface{}, err error) {
+	defer func() {
+		if e := recover(); e != nil {	
+			if panicHandler != nil {
+				panicHandler()
+			}		
+			err = errors.New(fmt.Sprintf("%s",e))
+		}
+	}()
+	return method()
+}
+
 func Lambda(method func() (interface{}, error), timeout time.Duration) (interface{}, error) {
 	output := make(chan interface{})
 	go func() {
