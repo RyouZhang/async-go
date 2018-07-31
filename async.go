@@ -12,17 +12,17 @@ type LambdaMethod func() (interface{}, error)
 
 var panicHandler func()
 
-func SetPanicHandler(hanlder func()) {
+func SetPanicHandler(hanlder func(error)) {
 	panicHandler = hanlder
 }
 
 func Safety(method func() (interface{}, error)) (res interface{}, err error) {
 	defer func() {
 		if e := recover(); e != nil {	
-			if panicHandler != nil {
-				panicHandler()
-			}		
 			err = errors.New(fmt.Sprintf("%s",e))
+			if panicHandler != nil {
+				panicHandler(err)
+			}			
 		}
 	}()
 	return method()
@@ -34,10 +34,11 @@ func Lambda(method func() (interface{}, error), timeout time.Duration) (interfac
 		defer close(output)
 		defer func() {
 			if e := recover(); e != nil {	
+				err := errors.New(fmt.Sprintf("%s",e))
 				if panicHandler != nil {
-					panicHandler()
+					panicHandler(err)
 				}		
-				output <- errors.New(fmt.Sprintf("%s",e))
+				output <- err
 			}
 		}()
 		res, err := method()
