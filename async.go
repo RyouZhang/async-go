@@ -10,7 +10,7 @@ import (
 type Method func(args ...interface{}) (interface{}, error)
 type LambdaMethod func() (interface{}, error)
 
-var panicHandler func()
+var panicHandler func(error)
 
 func SetPanicHandler(hanlder func(error)) {
 	panicHandler = hanlder
