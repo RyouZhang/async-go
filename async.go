@@ -10,16 +10,16 @@ import (
 type Method func(args ...interface{}) (interface{}, error)
 type LambdaMethod func() (interface{}, error)
 
-var panicHandler func(error)
+var panicHandler func(interface{})
 
-func SetPanicHandler(hanlder func(error)) {
+func SetPanicHandler(hanlder func(interface{})) {
 	panicHandler = hanlder
 }
 
 func Safety(method func() (interface{}, error)) (res interface{}, err error) {
 	defer func() {
 		if e := recover(); e != nil {	
-			err = errors.New(fmt.Sprintf("%s",e))
+			err = errors.New(fmt.Sprintf("%v",e))
 			if panicHandler != nil {
 				panicHandler(err)
 			}			
