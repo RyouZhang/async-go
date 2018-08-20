@@ -91,7 +91,7 @@ func (m *Merge) Destory() {
 
 func (m *Merge) Exec(key string, method func() (interface{}, error)) (interface{}, error) {
 	if m.isDestory {
-		return nil, errors.New("Merge is Destoried")
+		return nil, errors.New("Merge Destoried")
 	}
 	m.wg.Add(1)
 	defer m.wg.Done()
