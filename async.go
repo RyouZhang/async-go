@@ -1,8 +1,8 @@
 package async
 
 import (
-	"fmt"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -18,11 +18,11 @@ func SetPanicHandler(hanlder func(interface{})) {
 
 func Safety(method func() (interface{}, error)) (res interface{}, err error) {
 	defer func() {
-		if e := recover(); e != nil {	
-			err = errors.New(fmt.Sprintf("%v",e))
+		if e := recover(); e != nil {
+			err = errors.New(fmt.Sprintf("%v", e))
 			if panicHandler != nil {
 				panicHandler(err)
-			}			
+			}
 		}
 	}()
 	return method()
@@ -33,11 +33,11 @@ func Lambda(method func() (interface{}, error), timeout time.Duration) (interfac
 	go func() {
 		defer close(output)
 		defer func() {
-			if e := recover(); e != nil {	
-				err := errors.New(fmt.Sprintf("%s",e))
+			if e := recover(); e != nil {
+				err := errors.New(fmt.Sprintf("%s", e))
 				if panicHandler != nil {
 					panicHandler(err)
-				}		
+				}
 				output <- err
 			}
 		}()

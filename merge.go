@@ -1,154 +1,114 @@
 package async
 
 import (
-	"time"
+	"errors"
+	"sync"
 )
 
-type Query struct {
-	keys            []interface{}
-	successCallback chan map[interface{}]interface{}
-	errorCallback   chan error
+type request struct {
+	key      string
+	method   func() (interface{}, error)
+	callback chan interface{}
 }
 
-type GQuery struct {
-	keys   []interface{}
-	querys []Query
-}
-
-type QResult struct {
-	querys []Query
-	pairs  map[interface{}]interface{}
-	err    error
+type reply struct {
+	key    string
+	result interface{}
 }
 
 type Merge struct {
-	kernal func([]interface{}) (map[interface{}]interface{}, error)
-	branchSize int
-	interval	time.Duration
-	shutdown   chan bool
-	input      chan Query
-	output     chan QResult
+	callbackDic map[string][]chan interface{}
+	inputQueue  chan *request
+	outputQueue chan *reply
+	shutdown    chan bool
+	wg          sync.WaitGroup
+	isDestory   bool
+	destoryOnce sync.Once
 }
 
-func NewMerge(
-	name string,
-	kernal func([]interface{}) (map[interface{}]interface{}, error),
-	branchSize int, 
-	interval time.Duration) *Merge {
-	p := &Merge{
-		kernal:     kernal,
-		shutdown:   make(chan bool),
-		branchSize: branchSize,
-		interval: interval,
-		input:      make(chan Query, 64),
-		output:     make(chan QResult, 64)}
-	go p.run()
-	return p
+func NewMerge() *Merge {
+	m := &Merge{
+		callbackDic: make(map[string][]chan interface{}),
+		inputQueue:  make(chan *request, 16),
+		outputQueue: make(chan *reply, 4),
+		shutdown:    make(chan bool),
+		isDestory:   false,
+	}
+	go m.runloop()
+	return m
 }
 
-func (p *Merge) doing(gq GQuery) {
-	defer func() {
-		if e := recover(); e != nil {
-			p.output <- QResult{err: e.(error), querys: gq.querys}
-		}
-	}()
-	pairs, err := p.kernal(gq.keys)
-	p.output <- QResult{err: err, querys: gq.querys, pairs: pairs}
-}
-
-
-func (p *Merge) run() {
-	querys := []Query{}
-	missKeys := make(map[interface{}]bool)
-	timer := time.NewTimer(50 * time.Millisecond)
+func (m *Merge) runloop() {
 	for {
 		select {
-		case <-p.shutdown:
+		case <-m.shutdown:
 			{
-				if timer != nil {
-					timer.Stop()
-				}
 				return
 			}
-		case q := <-p.input:
+		case rep := <-m.outputQueue:
 			{
-				for _, key := range q.keys {
-					missKeys[key] = true
-				}
-				querys = append(querys, q)
-				if len(missKeys) >= p.branchSize {
-					keys := make([]interface{}, len(missKeys))
-					index := 0
-					for key, _ := range missKeys {
-						keys[index] = key
-						index = index + 1
+				target, ok := m.callbackDic[rep.key]
+				if ok {
+					for _, callback := range target {
+						callback <- rep.result
 					}
-					gq := GQuery{keys: keys, querys: querys}
-					querys = []Query{}
-					missKeys = make(map[interface{}]bool)
-					go p.doing(gq)
-					timer.Reset(50 * time.Millisecond)
+					delete(m.callbackDic, rep.key)
 				}
 			}
-		case r := <-p.output:
+		case req := <-m.inputQueue:
 			{
-				if r.err != nil {
-					for _, q := range r.querys {
-						q.errorCallback <- r.err
-					}
+				target, ok := m.callbackDic[req.key]
+				if ok {
+					m.callbackDic[req.key] = append(target, req.callback)
 				} else {
-					for _, q := range r.querys {
-						result := make(map[interface{}]interface{})
-						for _, key := range q.keys {
-							value, ok := r.pairs[key]
-							if ok {
-								result[key] = value
-							}
+					target = make([]chan interface{}, 1)
+					target[0] = req.callback
+					m.callbackDic[req.key] = target
+
+					go func(key string, method func() (interface{}, error)) {
+						res, err := Lambda(method, 0)
+						if err != nil {
+							m.outputQueue <- &reply{key: key, result: err}
+						} else {
+							m.outputQueue <- &reply{key: key, result: res}
 						}
-						q.successCallback <- result
-					}
+					}(req.key, req.method)
 				}
-			}			
-		case <-timer.C:
-			{
-				if len(missKeys) > 0 {
-					keys := make([]interface{}, len(missKeys))
-					index := 0
-					for key, _ := range missKeys {
-						keys[index] = key
-						index = index + 1
-					}
-					gq := GQuery{keys: keys, querys: querys}
-					querys = []Query{}
-					missKeys = make(map[interface{}]bool)
-					go p.doing(gq)
-				}
-				timer.Reset(50 * time.Millisecond)
 			}
 		}
 	}
 }
 
-func (p *Merge) MGet(keys []interface{}) (map[interface{}]interface{}, error) {
-	successCallback := make(chan map[interface{}]interface{})
-	errorCallback := make(chan error)
+func (m *Merge) Destory() {
+	m.destoryOnce.Do(func() {
+		m.isDestory = true
+	})
+	m.wg.Wait()
+	close(m.shutdown)
+	close(m.inputQueue)
+	close(m.outputQueue)
+}
 
-	defer close(successCallback)
-	defer close(errorCallback)
+func (m *Merge) Exec(key string, method func() (interface{}, error)) (interface{}, error) {
+	if m.isDestory {
+		return nil, errors.New("Merge is Destoried")
+	}
+	m.wg.Add(1)
+	defer m.wg.Done()
 
-	p.input <- Query{
-		keys:            keys,
-		successCallback: successCallback,
-		errorCallback:   errorCallback}
+	callback := make(chan interface{}, 1)
+	m.inputQueue <- &request{key: key, method: method, callback: callback}
 
-	select {
-	case err := <-errorCallback:
+	res := <-callback
+	close(callback)
+	switch res.(type) {
+	case error:
 		{
-			return nil, err
+			return nil, res.(error)
 		}
-	case result := <-successCallback:
+	default:
 		{
-			return result, nil
+			return res, nil
 		}
 	}
 }
