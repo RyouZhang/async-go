@@ -28,6 +28,21 @@ func Safety(method func() (interface{}, error)) (res interface{}, err error) {
 	return method()
 }
 
+func Retry(method func()(interface{}, error), maxCount int, interval time.Duration) (interface{}, error) {
+	count := 0	
+	for {
+		res, err := Lambda(method, 0)
+		if err == nil {
+			return res, err
+		}
+		count = count + 1
+		if count >= maxCount {
+			return nil, err
+		}
+		<-time.After(interval)
+	}
+}
+
 func Lambda(method func() (interface{}, error), timeout time.Duration) (interface{}, error) {
 	output := make(chan interface{})
 	go func() {
