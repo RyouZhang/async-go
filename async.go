@@ -28,8 +28,8 @@ func Safety(method func() (interface{}, error)) (res interface{}, err error) {
 	return method()
 }
 
-func Retry(method func()(interface{}, error), maxCount int, interval time.Duration) (interface{}, error) {
-	count := 0	
+func Retry(method func() (interface{}, error), maxCount int, interval time.Duration) (interface{}, error) {
+	count := 0
 	for {
 		res, err := Lambda(method, 0)
 		if err == nil {
@@ -45,7 +45,8 @@ func Retry(method func()(interface{}, error), maxCount int, interval time.Durati
 
 func Lambda(method func() (interface{}, error), timeout time.Duration) (interface{}, error) {
 	output := make(chan interface{})
-	go func() {
+	flag := false
+	go func(flag *bool) {
 		defer close(output)
 		defer func() {
 			if e := recover(); e != nil {
@@ -57,12 +58,15 @@ func Lambda(method func() (interface{}, error), timeout time.Duration) (interfac
 			}
 		}()
 		res, err := method()
+		if *flag {
+			return
+		}
 		if err != nil {
 			output <- err
 		} else {
 			output <- res
 		}
-	}()
+	}(&flag)
 	if timeout > 0 {
 		timer := time.NewTimer(timeout)
 		defer timer.Stop()
@@ -82,6 +86,7 @@ func Lambda(method func() (interface{}, error), timeout time.Duration) (interfac
 			}
 		case <-timer.C:
 			{
+				flag = true
 				return nil, errors.New("Async_Timeout")
 			}
 		}
