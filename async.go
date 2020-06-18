@@ -19,7 +19,12 @@ func SetPanicHandler(hanlder func(interface{})) {
 func Safety(method func() (interface{}, error)) (res interface{}, err error) {
 	defer func() {
 		if e := recover(); e != nil {
-			err = errors.New(fmt.Sprintf("%v", e))
+			_, ok := e.(error)
+			if ok {
+				err = e.(error)
+			} else {
+				err = errors.New(fmt.Sprintf("%v", e))
+			}
 			if panicHandler != nil {
 				panicHandler(err)
 			}
