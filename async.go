@@ -258,3 +258,34 @@ func Parallel(methods []LambdaMethod, maxCount int) []interface{} {
 	close(workers)
 	return results
 }
+
+func Foreach(objs []interface{}, method func(int) (interface{}, error), maxCount int) []interface{} {
+	if maxCount <= 0 {
+		maxCount = 1
+	}
+	var wg sync.WaitGroup
+	workers := make(chan bool, maxCount)
+	for i := 0; i < maxCount; i++ {
+		workers <- true
+	}
+	results := make([]interface{}, len(objs))
+	for index, _ := range objs {
+		<-workers
+		wg.Add(1)
+		go func(i int, method func(int) (interface{}, error)) {
+			defer func() {
+				workers <- true
+				wg.Done()
+			}()
+			res, err := method(i)
+			if err != nil {
+				results[i] = err
+			} else {
+				results[i] = res
+			}
+		}(index, method)
+	}
+	wg.Wait()
+	close(workers)
+	return results
+}
