@@ -58,7 +58,7 @@ func (p *Batch) doing(gq GQuery) {
 func (p *Batch) run() {
 	querys := []Query{}
 	missKeys := make(map[interface{}]bool)
-	timer := time.NewTimer(50 * time.Millisecond)
+	timer := time.NewTimer(10 *time.Millisecond)
 	for {
 		select {
 		case <-p.shutdown:
@@ -85,7 +85,7 @@ func (p *Batch) run() {
 					querys = []Query{}
 					missKeys = make(map[interface{}]bool)
 					go p.doing(gq)
-					timer.Reset(50 * time.Millisecond)
+					timer.Reset(10 *time.Millisecond)
 				}
 			}
 		case r := <-p.output:
@@ -121,7 +121,7 @@ func (p *Batch) run() {
 					missKeys = make(map[interface{}]bool)
 					go p.doing(gq)
 				}
-				timer.Reset(50 * time.Millisecond)
+				timer.Reset(10 *time.Millisecond)
 			}
 		}
 	}

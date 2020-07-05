@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const Unlimit = 0
+
 type Method func(args ...interface{}) (interface{}, error)
 type LambdaMethod func() (interface{}, error)
 
@@ -36,7 +38,7 @@ func Safety(method func() (interface{}, error)) (res interface{}, err error) {
 func Retry(method func()(interface{}, error), maxCount int, interval time.Duration) (interface{}, error) {
 	count := 0	
 	for {
-		res, err := Lambda(method, 0)
+		res, err := Lambda(method, Unlimit)
 		if err == nil {
 			return res, err
 		}
@@ -229,8 +231,8 @@ func AnyOne(methods []LambdaMethod, timeout time.Duration) (interface{}, []error
 }
 
 func Parallel(methods []LambdaMethod, maxCount int) []interface{} {
-	if maxCount <= 0 {
-		maxCount = 1
+	if maxCount == Unlimit {
+		maxCount = 64
 	}
 	var wg sync.WaitGroup
 	workers := make(chan bool, maxCount)
@@ -260,8 +262,8 @@ func Parallel(methods []LambdaMethod, maxCount int) []interface{} {
 }
 
 func Foreach(objs []interface{}, method func(int) (interface{}, error), maxCount int) []interface{} {
-	if maxCount <= 0 {
-		maxCount = 1
+	if maxCount == Unlimit {
+		maxCount = 64
 	}
 	var wg sync.WaitGroup
 	workers := make(chan bool, maxCount)
