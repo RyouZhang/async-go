@@ -278,8 +278,10 @@ func Foreach(objs []interface{}, method func(int) (interface{}, error), maxCount
 			defer func() {
 				workers <- true
 				wg.Done()
-			}()
-			res, err := method(i)
+			}()		
+			res, err := Safety(func()(interface{}, error) {
+				return method(i)
+			}) 
 			if err != nil {
 				results[i] = err
 			} else {
