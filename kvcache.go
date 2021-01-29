@@ -21,6 +21,7 @@ type KVData struct {
 	pairs   map[interface{}]interface{}
 	keys    *list.List
 	index   map[interface{}]*list.Element
+	lru     bool
 	ttl     int64 //second
 	maxSize int
 }
@@ -30,6 +31,7 @@ func newKVData() *KVData {
 		pairs:   make(map[interface{}]interface{}),
 		keys:    list.New(),
 		index:   make(map[interface{}]*list.Element),
+		lru:     false,
 		ttl:     0,
 		maxSize: 0,
 	}
@@ -51,6 +53,9 @@ func (kv *KVData) drain() {
 }
 
 func (kv *KVData) updateLRU(keys []interface{}) {
+	if false == kv.lru {
+		return
+	}
 	now := time.Now().Unix() + kv.ttl
 	for _, key := range keys {
 		ele, ok := kv.index[key]
@@ -217,6 +222,11 @@ func NewKVCache() *KVCache {
 
 func (kv *KVCache) TTL(ttl int64) *KVCache {
 	kv.data.ttl = ttl
+	return kv
+}
+
+func (kv *KVCache) LRU(flag bool) *KVCache {
+	kv.data.lru = flag
 	return kv
 }
 
