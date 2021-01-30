@@ -51,7 +51,7 @@ func Retry(method func()(interface{}, error), maxCount int, interval time.Durati
 }
 
 func Lambda(method func() (interface{}, error), timeout time.Duration) (interface{}, error) {
-	output := make(chan interface{})
+	output := make(chan interface{}, 1)
 	go func() {
 		defer close(output)
 		defer func() {
