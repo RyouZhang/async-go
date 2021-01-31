@@ -199,7 +199,7 @@ func Any(methods []LambdaMethod, timeout time.Duration) ([]interface{}, error) {
 
 func AnyOne(methods []LambdaMethod, timeout time.Duration) (interface{}, []error) {
 	resChan := make(chan interface{}, len(methods))
-	errChan := make(chan []error)
+	errChan := make(chan []error, 1)
 	go func() {
 		defer func() {
 			close(resChan)

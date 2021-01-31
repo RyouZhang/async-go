@@ -279,7 +279,7 @@ func (kv *KVCache) Commit(method func(*KVData) (interface{}, error)) (interface{
 		kv.desLock.RUnlock()
 		return nil, errors.New("Invalid KVCache")
 	}
-	output := make(chan interface{})
+	output := make(chan interface{}, 1)
 	defer close(output)
 	kv.queue <- operation{method: method, callback: output}
 	kv.desLock.RUnlock()
