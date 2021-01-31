@@ -58,7 +58,7 @@ func (p *Batch) doing(gq GQuery) {
 func (p *Batch) run() {
 	querys := []Query{}
 	missKeys := make(map[interface{}]bool)
-	timer := time.NewTimer(10 *time.Millisecond)
+	timer := time.NewTimer(10 * time.Millisecond)
 	for {
 		select {
 		case <-p.shutdown:
@@ -85,7 +85,7 @@ func (p *Batch) run() {
 					querys = []Query{}
 					missKeys = make(map[interface{}]bool)
 					go p.doing(gq)
-					timer.Reset(10 *time.Millisecond)
+					timer.Reset(10 * time.Millisecond)
 				}
 			}
 		case r := <-p.output:
@@ -121,15 +121,15 @@ func (p *Batch) run() {
 					missKeys = make(map[interface{}]bool)
 					go p.doing(gq)
 				}
-				timer.Reset(10 *time.Millisecond)
+				timer.Reset(10 * time.Millisecond)
 			}
 		}
 	}
 }
 
 func (p *Batch) MGet(keys []interface{}) (map[interface{}]interface{}, error) {
-	successCallback := make(chan map[interface{}]interface{})
-	errorCallback := make(chan error)
+	successCallback := make(chan map[interface{}]interface{}, 1)
+	errorCallback := make(chan error, 1)
 
 	defer close(successCallback)
 	defer close(errorCallback)

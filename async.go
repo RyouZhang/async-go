@@ -35,8 +35,8 @@ func Safety(method func() (interface{}, error)) (res interface{}, err error) {
 	return method()
 }
 
-func Retry(method func()(interface{}, error), maxCount int, interval time.Duration) (interface{}, error) {
-	count := 0	
+func Retry(method func() (interface{}, error), maxCount int, interval time.Duration) (interface{}, error) {
+	count := 0
 	for {
 		res, err := Lambda(method, Unlimit)
 		if err == nil {
@@ -236,16 +236,13 @@ func Parallel(methods []LambdaMethod, maxCount int) []interface{} {
 	}
 	var wg sync.WaitGroup
 	workers := make(chan bool, maxCount)
-	for i := 0; i < maxCount; i++ {
-		workers <- true
-	}
 	results := make([]interface{}, len(methods))
 	for index, method := range methods {
-		<-workers
+		workers <- true
 		wg.Add(1)
 		go func(i int, m LambdaMethod) {
 			defer func() {
-				workers <- true
+				<-workers
 				wg.Done()
 			}()
 			res, err := Lambda(m, 0)
@@ -267,21 +264,18 @@ func Foreach(objs []interface{}, method func(int) (interface{}, error), maxCount
 	}
 	var wg sync.WaitGroup
 	workers := make(chan bool, maxCount)
-	for i := 0; i < maxCount; i++ {
-		workers <- true
-	}
 	results := make([]interface{}, len(objs))
 	for index, _ := range objs {
-		<-workers
+		workers <- true
 		wg.Add(1)
 		go func(i int, method func(int) (interface{}, error)) {
 			defer func() {
-				workers <- true
+				<-workers
 				wg.Done()
-			}()		
-			res, err := Safety(func()(interface{}, error) {
+			}()
+			res, err := Safety(func() (interface{}, error) {
 				return method(i)
-			}) 
+			})
 			if err != nil {
 				results[i] = err
 			} else {
