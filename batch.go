@@ -5,20 +5,19 @@ import (
 )
 
 type Query struct {
-	keys            []interface{}
-	successCallback chan map[interface{}]interface{}
+	key             interface{}
+	successCallback chan interface{}
 	errorCallback   chan error
 }
 
 type GQuery struct {
-	keys   []interface{}
-	querys []Query
+	keys []interface{}
 }
 
 type QResult struct {
-	querys []Query
-	pairs  map[interface{}]interface{}
-	err    error
+	keys  []interface{}
+	pairs map[interface{}]interface{}
+	err   error
 }
 
 type Batch struct {
@@ -39,8 +38,8 @@ func NewBatch(
 		shutdown:   make(chan bool),
 		branchSize: branchSize,
 		interval:   interval,
-		input:      make(chan Query, 64),
-		output:     make(chan QResult, 64)}
+		input:      make(chan Query, 128),
+		output:     make(chan QResult, 32)}
 	go p.run()
 	return p
 }
@@ -48,17 +47,17 @@ func NewBatch(
 func (p *Batch) doing(gq GQuery) {
 	defer func() {
 		if e := recover(); e != nil {
-			p.output <- QResult{err: e.(error), querys: gq.querys}
+			p.output <- QResult{err: e.(error), keys: gq.keys}
 		}
 	}()
 	pairs, err := p.kernal(gq.keys)
-	p.output <- QResult{err: err, querys: gq.querys, pairs: pairs}
+	p.output <- QResult{err: err, pairs: pairs, keys: gq.keys}
 }
 
 func (p *Batch) run() {
-	querys := []Query{}
+	mqDic := make(map[interface{}][]Query)
 	missKeys := make(map[interface{}]bool)
-	timer := time.NewTimer(10 * time.Millisecond)
+	timer := time.NewTimer(p.interval)
 	for {
 		select {
 		case <-p.shutdown:
@@ -70,10 +69,14 @@ func (p *Batch) run() {
 			}
 		case q := <-p.input:
 			{
-				for _, key := range q.keys {
-					missKeys[key] = true
+				target, ok := mqDic[q.key]
+				if ok {
+					mqDic[q.key] = append(target, q)
+					continue
 				}
-				querys = append(querys, q)
+				mqDic[q.key] = []Query{q}
+				missKeys[q.key] = true
+
 				if len(missKeys) >= p.branchSize {
 					keys := make([]interface{}, len(missKeys))
 					index := 0
@@ -81,29 +84,33 @@ func (p *Batch) run() {
 						keys[index] = key
 						index = index + 1
 					}
-					gq := GQuery{keys: keys, querys: querys}
-					querys = []Query{}
+					gq := GQuery{keys: keys}
 					missKeys = make(map[interface{}]bool)
 					go p.doing(gq)
-					timer.Reset(10 * time.Millisecond)
+					timer.Reset(p.interval)
 				}
 			}
 		case r := <-p.output:
 			{
 				if r.err != nil {
-					for _, q := range r.querys {
-						q.errorCallback <- r.err
-					}
-				} else {
-					for _, q := range r.querys {
-						result := make(map[interface{}]interface{})
-						for _, key := range q.keys {
-							value, ok := r.pairs[key]
-							if ok {
-								result[key] = value
+					for _, key := range r.keys {
+						querys, ok := mqDic[key]
+						if ok {
+							for _, q := range querys {
+								q.errorCallback <- r.err
 							}
 						}
-						q.successCallback <- result
+						delete(mqDic, key)
+					}
+				} else {
+					for _, key := range r.keys {
+						querys, ok := mqDic[key]
+						if ok {
+							for _, q := range querys {
+								q.successCallback <- r.pairs[key]
+							}
+						}
+						delete(mqDic, key)
 					}
 				}
 			}
@@ -116,29 +123,57 @@ func (p *Batch) run() {
 						keys[index] = key
 						index = index + 1
 					}
-					gq := GQuery{keys: keys, querys: querys}
-					querys = []Query{}
+					gq := GQuery{keys: keys}
 					missKeys = make(map[interface{}]bool)
 					go p.doing(gq)
 				}
-				timer.Reset(10 * time.Millisecond)
+				timer.Reset(p.interval)
 			}
 		}
 	}
 }
 
 func (p *Batch) MGet(keys []interface{}) (map[interface{}]interface{}, error) {
-	successCallback := make(chan map[interface{}]interface{}, 1)
+	res := Foreach(keys, func(index int) (interface{}, error) {
+		successCallback := make(chan interface{}, 1)
+		errorCallback := make(chan error, 1)
+
+		defer close(successCallback)
+		defer close(errorCallback)
+
+		p.input <- Query{key: keys[index], successCallback: successCallback, errorCallback: errorCallback}
+		select {
+		case err := <-errorCallback:
+			{
+				return nil, err
+			}
+		case result := <-successCallback:
+			{
+				return result, nil
+			}
+		}
+	}, Unlimit)
+
+	result := make(map[interface{}]interface{})
+	for index, _ := range res {
+		switch res[index].(type) {
+		case error:
+			return nil, res[index].(error)
+		default:
+			result[keys[index]] = res[index]
+		}
+	}
+	return result, nil
+}
+
+func (p *Batch) Get(key interface{}) (interface{}, error) {
+	successCallback := make(chan interface{}, 1)
 	errorCallback := make(chan error, 1)
 
 	defer close(successCallback)
 	defer close(errorCallback)
 
-	p.input <- Query{
-		keys:            keys,
-		successCallback: successCallback,
-		errorCallback:   errorCallback}
-
+	p.input <- Query{key: key, successCallback: successCallback, errorCallback: errorCallback}
 	select {
 	case err := <-errorCallback:
 		{
