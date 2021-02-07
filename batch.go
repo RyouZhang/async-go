@@ -94,6 +94,7 @@ func runloop() {
 				g, ok := groupDic[c.group]
 				if false == ok {
 					c.callback <- fmt.Errorf("invalid group:%s", c.group)
+					close(c.callback)
 					continue
 				}
 				// cache provider
@@ -101,6 +102,7 @@ func runloop() {
 					res, err := g.cache.Get(g.name, c.key)
 					if res != nil && err == nil {
 						c.callback <- res
+						close(c.callback)
 						continue
 					}
 				}
