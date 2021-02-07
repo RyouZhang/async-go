@@ -136,7 +136,8 @@ func runloop() {
 					for _, key := range b.keys {
 						target, ok := g.cmdDic[key]
 						if ok {
-							for _, c := range target {
+							for index, _ := range target {
+								c := target[index]
 								c.callback <- b.err
 								close(c.callback)
 							}
@@ -156,7 +157,8 @@ func runloop() {
 						}
 						target, ok := g.cmdDic[key]
 						if ok {
-							for _, c := range target {
+							for index, _ := range target {
+								c := target[index]
 								c.callback <- res
 								close(c.callback)
 							}
