@@ -14,7 +14,7 @@ var (
 	gLocker  sync.RWMutex
 )
 
-type CacheProvider interface {	
+type CacheProvider interface {
 	Put(interface{}, interface{}) error
 	Get(interface{}) (interface{}, error)
 }
@@ -32,7 +32,7 @@ type group struct {
 	method    func(...interface{}) (map[interface{}]interface{}, error)
 	cmdDic    map[interface{}][]*cmd
 	keyDic    map[interface{}]bool
-	cache		CacheProvider
+	cache     CacheProvider
 }
 
 type cmd struct {
@@ -49,8 +49,8 @@ type batchCmd struct {
 }
 
 func RegisterGroup(
-	name string, 
-	batchSize int, 
+	name string,
+	batchSize int,
 	method func(...interface{}) (map[interface{}]interface{}, error),
 	cache CacheProvider) error {
 	gLocker.Lock()
@@ -65,7 +65,7 @@ func RegisterGroup(
 		method:    method,
 		cmdDic:    make(map[interface{}][]*cmd),
 		keyDic:    make(map[interface{}]bool),
-		cache: cache,
+		cache:     cache,
 	}
 	return nil
 }
@@ -79,7 +79,7 @@ func doing(ctx context.Context, b *batchCmd, method func(...interface{}) (map[in
 	} else {
 		b.result = res.(map[interface{}]interface{})
 	}
-	output <- b	
+	output <- b
 }
 
 func runloop() {
@@ -185,7 +185,7 @@ func runloop() {
 	}
 }
 
-func Get(group string, key interface{}) (interface{}, error) {	
+func Get(group string, key interface{}) (interface{}, error) {
 	c := &cmd{
 		group:    group,
 		key:      key,
