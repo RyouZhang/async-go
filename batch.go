@@ -1,195 +1,202 @@
 package async
 
 import (
+	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
-type Query struct {
-	key             interface{}
-	successCallback chan interface{}
-	errorCallback   chan error
+var (
+	input    chan *cmd
+	output   chan *batchCmd
+	groupDic map[string]*group
+	gLocker  sync.RWMutex
+)
+
+type CacheProvider interface {
+	Put(interface{}, interface{}) error
+	Get(interface{}) (interface{}, error)
 }
 
-type GQuery struct {
-	keys []interface{}
+func init() {
+	groupDic = make(map[string]*group)
+	input = make(chan *cmd, 128)
+	output = make(chan *batchCmd, 128)
+	go runloop()
 }
 
-type QResult struct {
-	keys  []interface{}
-	pairs map[interface{}]interface{}
-	err   error
+type group struct {
+	name      string
+	batchSize int
+	method    func(...interface{}) (map[interface{}]interface{}, error)
+	cmdDic    map[interface{}][]*cmd
+	keyDic    map[interface{}]bool
+	cache     CacheProvider
 }
 
-type Batch struct {
-	kernal     func([]interface{}) (map[interface{}]interface{}, error)
-	branchSize int
-	interval   time.Duration
-	shutdown   chan bool
-	input      chan Query
-	output     chan QResult
+type cmd struct {
+	group    string
+	key      interface{}
+	callback chan interface{}
 }
 
-func NewBatch(
-	kernal func([]interface{}) (map[interface{}]interface{}, error),
-	branchSize int,
-	interval time.Duration) *Batch {
-	p := &Batch{
-		kernal:     kernal,
-		shutdown:   make(chan bool),
-		branchSize: branchSize,
-		interval:   interval,
-		input:      make(chan Query, 128),
-		output:     make(chan QResult, 32)}
-	go p.run()
-	return p
+type batchCmd struct {
+	group  string
+	keys   []interface{}
+	err    error
+	result map[interface{}]interface{}
 }
 
-func (p *Batch) doing(gq GQuery) {
-	pairs, err := Safety(func() (interface{}, error) {
-		return p.kernal(gq.keys)
+func RegisterGroup(
+	name string,
+	batchSize int,
+	method func(...interface{}) (map[interface{}]interface{}, error),
+	cache CacheProvider) error {
+	gLocker.Lock()
+	defer gLocker.Unlock()
+	_, ok := groupDic[name]
+	if ok {
+		return fmt.Errorf("duplicate group:%s", name)
+	}
+	groupDic[name] = &group{
+		name:      name,
+		batchSize: batchSize,
+		method:    method,
+		cmdDic:    make(map[interface{}][]*cmd),
+		keyDic:    make(map[interface{}]bool),
+		cache:     cache,
+	}
+	return nil
+}
+
+func doing(ctx context.Context, b *batchCmd, method func(...interface{}) (map[interface{}]interface{}, error)) {
+	res, err := Safety(func() (interface{}, error) {
+		return method(b.keys...)
 	})
-	p.output <- QResult{err: err, pairs: pairs.(map[interface{}]interface{}), keys: gq.keys}
+	if err != nil {
+		b.err = err
+	} else {
+		b.result = res.(map[interface{}]interface{})
+	}
+	output <- b
 }
 
-func (p *Batch) run() {
-	mqDic := make(map[interface{}][]Query)
-	missKeys := make(map[interface{}]bool)
-	timer := time.NewTimer(p.interval)
+func runloop() {
+	ctx := context.Background()
+	timer := time.NewTicker(10 * time.Millisecond)
 	for {
 		select {
-		case <-p.shutdown:
+		case c := <-input:
 			{
-				if timer != nil {
-					timer.Stop()
-				}
-				return
-			}
-		case q := <-p.input:
-			{
-				target, ok := mqDic[q.key]
-				if ok {
-					mqDic[q.key] = append(target, q)
+				gLocker.RLocker()
+				defer gLocker.RUnlock()
+				g, ok := groupDic[c.group]
+				if false == ok {
+					c.callback <- fmt.Errorf("invalid group:%s", c.group)
 					continue
 				}
-				mqDic[q.key] = []Query{q}
-				missKeys[q.key] = true
+				// cache provider
+				if g.cache != nil {
+					res, err := g.cache.Get(c.key)
+					if res != nil && err == nil {
+						c.callback <- res
+						continue
+					}
+				}
+				target, ok := g.cmdDic[c.key]
+				if ok {
+					g.cmdDic[c.key] = append(target, c)
+				} else {
+					g.cmdDic[c.key] = []*cmd{c}
+					g.keyDic[c.key] = true
+				}
 
-				if len(missKeys) >= p.branchSize {
-					keys := make([]interface{}, len(missKeys))
+				if len(g.keyDic) >= g.batchSize {
+					b := &batchCmd{group: g.name}
+					b.keys = make([]interface{}, len(g.keyDic))
 					index := 0
-					for key, _ := range missKeys {
-						keys[index] = key
+					for k, _ := range g.keyDic {
+						b.keys[index] = k
 						index = index + 1
 					}
-					gq := GQuery{keys: keys}
-					missKeys = make(map[interface{}]bool)
-					go p.doing(gq)
-					timer.Reset(p.interval)
+					g.keyDic = make(map[interface{}]bool)
+					go doing(ctx, b, g.method)
 				}
 			}
-		case r := <-p.output:
+		case b := <-output:
 			{
-				if r.err != nil {
-					for _, key := range r.keys {
-						querys, ok := mqDic[key]
+				gLocker.RLocker()
+				defer gLocker.RUnlock()
+				g, _ := groupDic[b.group]
+				if b.err != nil {
+					for _, key := range b.keys {
+						target, ok := g.cmdDic[key]
 						if ok {
-							for _, q := range querys {
-								q.errorCallback <- r.err
+							for _, c := range target {
+								c.callback <- b.err
+								close(c.callback)
 							}
 						}
-						delete(mqDic, key)
+						delete(g.cmdDic, key)
 					}
-					continue
-				}
-				for _, key := range r.keys {
-					querys, ok := mqDic[key]
-					if ok {
-						for _, q := range querys {
-							switch r.pairs[key].(type) {
-							case error:
-								q.errorCallback <- r.pairs[key].(error)
-							default:
-								q.successCallback <- r.pairs[key]
+				} else {
+					for _, key := range b.keys {
+						res, ok := b.result[key]
+						if false == ok {
+							res = fmt.Errorf("invalid key:%s", key)
+						} else {
+							// cache provider
+							if g.cache != nil {
+								g.cache.Put(key, res)
 							}
 						}
-					} else {
-						err := fmt.Errorf("invalid key:%s", key)
-						for _, q := range querys {
-							q.errorCallback <- err
+						target, ok := g.cmdDic[key]
+						if ok {
+							for _, c := range target {
+								c.callback <- res
+								close(c.callback)
+							}
 						}
+						delete(g.cmdDic, key)
 					}
-					delete(mqDic, key)
 				}
 			}
 		case <-timer.C:
 			{
-				if len(missKeys) > 0 {
-					keys := make([]interface{}, len(missKeys))
-					index := 0
-					for key, _ := range missKeys {
-						keys[index] = key
-						index = index + 1
+				gLocker.RLocker()
+				defer gLocker.RUnlock()
+				for _, g := range groupDic {
+					if len(g.keyDic) > 0 {
+						b := &batchCmd{group: g.name}
+						b.keys = make([]interface{}, len(g.keyDic))
+						index := 0
+						for k, _ := range g.keyDic {
+							b.keys[index] = k
+							index = index + 1
+						}
+						g.keyDic = make(map[interface{}]bool)
+						go doing(ctx, b, g.method)
 					}
-					gq := GQuery{keys: keys}
-					missKeys = make(map[interface{}]bool)
-					go p.doing(gq)
 				}
-				timer.Reset(p.interval)
+				timer.Reset(10 * time.Millisecond)
 			}
 		}
 	}
 }
 
-func (p *Batch) MGet(keys []interface{}) (map[interface{}]interface{}, error) {
-	res := Foreach(keys, func(index int) (interface{}, error) {
-		successCallback := make(chan interface{}, 1)
-		errorCallback := make(chan error, 1)
-
-		defer close(successCallback)
-		defer close(errorCallback)
-
-		p.input <- Query{key: keys[index], successCallback: successCallback, errorCallback: errorCallback}
-		select {
-		case err := <-errorCallback:
-			{
-				return nil, err
-			}
-		case result := <-successCallback:
-			{
-				return result, nil
-			}
-		}
-	}, Unlimit)
-
-	result := make(map[interface{}]interface{})
-	for index, _ := range res {
-		switch res[index].(type) {
-		case error:
-			return nil, res[index].(error)
-		default:
-			result[keys[index]] = res[index]
-		}
+func Get(group string, key interface{}) (interface{}, error) {
+	c := &cmd{
+		group:    group,
+		key:      key,
+		callback: make(chan interface{}, 1),
 	}
-	return result, nil
-}
-
-func (p *Batch) Get(key interface{}) (interface{}, error) {
-	successCallback := make(chan interface{}, 1)
-	errorCallback := make(chan error, 1)
-
-	defer close(successCallback)
-	defer close(errorCallback)
-
-	p.input <- Query{key: key, successCallback: successCallback, errorCallback: errorCallback}
-	select {
-	case err := <-errorCallback:
-		{
-			return nil, err
-		}
-	case result := <-successCallback:
-		{
-			return result, nil
-		}
+	input <- c
+	res := <-c.callback
+	switch res.(type) {
+	case error:
+		return nil, res.(error)
+	default:
+		return res, nil
 	}
 }
