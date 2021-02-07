@@ -102,16 +102,21 @@ func (p *Batch) run() {
 						}
 						delete(mqDic, key)
 					}
-				} else {
-					for _, key := range r.keys {
-						querys, ok := mqDic[key]
-						if ok {
-							for _, q := range querys {
-								q.successCallback <- r.pairs[key]
-							}
+					continue
+				}
+				for _, key := range r.keys {
+					querys, ok := mqDic[key]
+					if ok {
+						for _, q := range querys {
+							q.successCallback <- r.pairs[key]
 						}
-						delete(mqDic, key)
+					} else {
+						err := fmt.Errorf("invalid key:%s", key)
+						for _, q := range querys {
+							q.errorCallback <- err
+						}
 					}
+					delete(mqDic, key)
 				}
 			}
 		case <-timer.C:
