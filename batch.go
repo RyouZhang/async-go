@@ -49,7 +49,7 @@ func (p *Batch) doing(gq GQuery) {
 	pairs, err := Safety(func() (interface{}, error) {
 		return p.kernal(gq.keys)
 	})
-	p.output <- QResult{err: err, pairs: pairs, keys: gq.keys}
+	p.output <- QResult{err: err, pairs: pairs.(map[interface{}]interface{}), keys: gq.keys}
 }
 
 func (p *Batch) run() {
@@ -106,7 +106,7 @@ func (p *Batch) run() {
 					querys, ok := mqDic[key]
 					if ok {
 						for _, q := range querys {
-							switch r.pairs[q].(type) {
+							switch r.pairs[key].(type) {
 							case error:
 								q.errorCallback <- r.pairs[key]
 							default:
