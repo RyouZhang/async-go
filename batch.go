@@ -45,12 +45,9 @@ func NewBatch(
 }
 
 func (p *Batch) doing(gq GQuery) {
-	defer func() {
-		if e := recover(); e != nil {
-			p.output <- QResult{err: e.(error), keys: gq.keys}
-		}
-	}()
-	pairs, err := p.kernal(gq.keys)
+	pairs, err := Safety(func() (interface{}, error) {
+		return p.kernal(gq.keys)
+	})
 	p.output <- QResult{err: err, pairs: pairs, keys: gq.keys}
 }
 
@@ -108,7 +105,12 @@ func (p *Batch) run() {
 					querys, ok := mqDic[key]
 					if ok {
 						for _, q := range querys {
-							q.successCallback <- r.pairs[key]
+							switch r.pairs[q].(type) {
+							case error:
+								q.errorCallback <- r.pairs[key]
+							default:
+								q.successCallback <- r.pairs[key]
+							}
 						}
 					} else {
 						err := fmt.Errorf("invalid key:%s", key)
