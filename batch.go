@@ -108,7 +108,7 @@ func (p *Batch) run() {
 						for _, q := range querys {
 							switch r.pairs[key].(type) {
 							case error:
-								q.errorCallback <- r.pairs[key]
+								q.errorCallback <- r.pairs[key].(error)
 							default:
 								q.successCallback <- r.pairs[key]
 							}
