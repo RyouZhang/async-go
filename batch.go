@@ -15,8 +15,8 @@ var (
 )
 
 type CacheProvider interface {
-	Put(interface{}, interface{}) error
-	Get(interface{}) (interface{}, error)
+	Put(string, interface{}, interface{}) error
+	Get(string, interface{}) (interface{}, error)
 }
 
 func init() {
@@ -98,7 +98,7 @@ func runloop() {
 				}
 				// cache provider
 				if g.cache != nil {
-					res, err := g.cache.Get(c.key)
+					res, err := g.cache.Get(g.name, c.key)
 					if res != nil && err == nil {
 						c.callback <- res
 						continue
@@ -148,7 +148,7 @@ func runloop() {
 						} else {
 							// cache provider
 							if g.cache != nil {
-								g.cache.Put(key, res)
+								g.cache.Put(g.name, key, res)
 							}
 						}
 						target, ok := g.cmdDic[key]
