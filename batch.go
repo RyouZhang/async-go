@@ -84,7 +84,7 @@ func doing(ctx context.Context, b *batchCmd, method func(...interface{}) (map[in
 
 func runloop() {
 	ctx := context.Background()
-	timer := time.NewTicker(10 * time.Millisecond)	
+	timer := time.NewTimer(10 * time.Millisecond)	
 	for {
 		select {
 		case c := <-input:
@@ -183,6 +183,7 @@ func runloop() {
 						go doing(ctx, b, g.method)
 					}
 				}
+				timer.Reset(10*time.Millisecond)
 			}
 		}
 	}
