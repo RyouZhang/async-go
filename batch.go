@@ -164,7 +164,9 @@ func runloop() {
 							}
 						}
 						delete(g.cmdDic, key)
-					}
+					}	
+					b.keys = nil
+					b.result = nil				
 				}
 			}
 		case <-timer.C:
