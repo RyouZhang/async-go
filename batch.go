@@ -84,7 +84,7 @@ func doing(ctx context.Context, b *batchCmd, method func(...interface{}) (map[in
 
 func runloop() {
 	ctx := context.Background()
-	timer := time.NewTicker(10 * time.Millisecond)
+	timer := time.NewTicker(10 * time.Millisecond)	
 	for {
 		select {
 		case c := <-input:
@@ -122,7 +122,6 @@ func runloop() {
 						b.keys[index] = k
 						index = index + 1
 					}
-					g.keyDic = nil
 					g.keyDic = make(map[interface{}]bool)
 					go doing(ctx, b, g.method)
 				}
@@ -164,9 +163,7 @@ func runloop() {
 							}
 						}
 						delete(g.cmdDic, key)
-					}	
-					b.keys = nil
-					b.result = nil				
+					}			
 				}
 			}
 		case <-timer.C:
@@ -182,12 +179,10 @@ func runloop() {
 							b.keys[index] = k
 							index = index + 1
 						}
-						g.keyDic = nil
 						g.keyDic = make(map[interface{}]bool)
 						go doing(ctx, b, g.method)
 					}
 				}
-				timer.Reset(10 * time.Millisecond)
 			}
 		}
 	}
