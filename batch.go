@@ -180,6 +180,7 @@ func runloop() {
 							b.keys[index] = k
 							index = index + 1
 						}
+						g.keyDic = nil
 						g.keyDic = make(map[interface{}]bool)
 						go doing(ctx, b, g.method)
 					}
