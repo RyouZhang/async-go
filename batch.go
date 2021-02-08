@@ -8,6 +8,7 @@ import (
 )
 
 var (
+	one      sync.Once
 	input    chan *cmd
 	output   chan *batchCmd
 	groupDic map[string]*group
@@ -23,7 +24,6 @@ func init() {
 	groupDic = make(map[string]*group)
 	input = make(chan *cmd, 128)
 	output = make(chan *batchCmd, 128)
-	go runloop()
 }
 
 type group struct {
@@ -67,6 +67,9 @@ func RegisterGroup(
 		keyDic:    make(map[interface{}]bool),
 		cache:     cache,
 	}
+	one.Do(func() {
+		go runloop()
+	})
 	return nil
 }
 
@@ -84,7 +87,7 @@ func doing(ctx context.Context, b *batchCmd, method func(...interface{}) (map[in
 
 func runloop() {
 	ctx := context.Background()
-	timer := time.NewTimer(10 * time.Millisecond)	
+	timer := time.NewTimer(10 * time.Millisecond)
 	for {
 		select {
 		case c := <-input:
@@ -163,7 +166,7 @@ func runloop() {
 							}
 						}
 						delete(g.cmdDic, key)
-					}			
+					}
 				}
 			}
 		case <-timer.C:
@@ -183,7 +186,7 @@ func runloop() {
 						go doing(ctx, b, g.method)
 					}
 				}
-				timer.Reset(10*time.Millisecond)
+				timer.Reset(10 * time.Millisecond)
 			}
 		}
 	}
