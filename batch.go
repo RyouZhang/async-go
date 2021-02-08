@@ -12,7 +12,6 @@ var (
 	input    chan *cmd
 	output   chan *batchCmd
 	groupDic map[string]*group
-	gLocker  sync.RWMutex
 )
 
 type CacheProvider interface {
@@ -53,8 +52,6 @@ func RegisterGroup(
 	batchSize int,
 	method func(...interface{}) (map[interface{}]interface{}, error),
 	cache CacheProvider) error {
-	gLocker.Lock()
-	defer gLocker.Unlock()
 	_, ok := groupDic[name]
 	if ok {
 		return fmt.Errorf("duplicate group:%s", name)
@@ -92,8 +89,6 @@ func runloop() {
 		select {
 		case c := <-input:
 			{
-				gLocker.RLocker()
-				defer gLocker.RUnlock()
 				g, ok := groupDic[c.group]
 				if false == ok {
 					c.callback <- fmt.Errorf("invalid group:%s", c.group)
@@ -131,8 +126,6 @@ func runloop() {
 			}
 		case b := <-output:
 			{
-				gLocker.RLocker()
-				defer gLocker.RUnlock()
 				g, _ := groupDic[b.group]
 				if b.err != nil {
 					for _, key := range b.keys {
@@ -171,8 +164,6 @@ func runloop() {
 			}
 		case <-timer.C:
 			{
-				gLocker.RLocker()
-				defer gLocker.RUnlock()
 				for _, g := range groupDic {
 					if len(g.keyDic) > 0 {
 						b := &batchCmd{group: g.name}
