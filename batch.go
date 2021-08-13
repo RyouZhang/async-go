@@ -146,7 +146,7 @@ func runloop() {
 							res = fmt.Errorf("invalid key:%s", key)
 						} else {
 							// cache provider
-							if g.cache != nil {
+							if g.cache != nil && res != nil {
 								g.cache.Put(g.name, key, res)
 							}
 						}
