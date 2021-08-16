@@ -287,3 +287,33 @@ func Foreach(objs []interface{}, method func(int) (interface{}, error), maxCount
 	close(workers)
 	return results
 }
+
+func For(count int, method func(int) (interface{}, error), maxCount int) []interface{} {
+	if maxCount == Unlimit {
+		maxCount = 64
+	}
+	var wg sync.WaitGroup
+	workers := make(chan bool, maxCount)
+	results := make([]interface{}, count)
+	for index := 0;  index < count; index++ {
+		workers <- true
+		wg.Add(1)
+		go func(i int, method func(int) (interface{}, error)) {
+			defer func() {
+				<-workers
+				wg.Done()
+			}()
+			res, err := Safety(func() (interface{}, error) {
+				return method(i)
+			})
+			if err != nil {
+				results[i] = err
+			} else {
+				results[i] = res
+			}
+		}(index, method)
+	}
+	wg.Wait()
+	close(workers)
+	return results
+}
