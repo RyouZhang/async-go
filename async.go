@@ -258,12 +258,12 @@ func Parallel(methods []LambdaMethod, maxCount int) []interface{} {
 	return results
 }
 
-func Foreach(objs []interface{}, method func(int) (interface{}, error), maxCount int) []interface{} {
-	if maxCount == Unlimit {
-		maxCount = 64
+func Foreach(objs []interface{}, method func(int) (interface{}, error), maxConcurrent int) []interface{} {
+	if maxConcurrent == Unlimit {
+		maxConcurrent = 64
 	}
 	var wg sync.WaitGroup
-	workers := make(chan bool, maxCount)
+	workers := make(chan bool, maxConcurrent)
 	results := make([]interface{}, len(objs))
 	for index, _ := range objs {
 		workers <- true
@@ -288,14 +288,14 @@ func Foreach(objs []interface{}, method func(int) (interface{}, error), maxCount
 	return results
 }
 
-func For(count int, method func(int) (interface{}, error), maxCount int) []interface{} {
-	if maxCount == Unlimit {
-		maxCount = 64
+func For(count int, method func(int) (interface{}, error), maxConcurrent int) []interface{} {
+	if maxConcurrent == Unlimit {
+		maxConcurrent = 64
 	}
 	var wg sync.WaitGroup
-	workers := make(chan bool, maxCount)
+	workers := make(chan bool, maxConcurrent)
 	results := make([]interface{}, count)
-	for index := 0;  index < count; index++ {
+	for index := 0; index < count; index++ {
 		workers <- true
 		wg.Add(1)
 		go func(i int, method func(int) (interface{}, error)) {
