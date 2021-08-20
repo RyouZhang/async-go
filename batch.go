@@ -101,7 +101,9 @@ func runloop() {
 				g, ok := groupDic[c.group]
 				if false == ok {
 					c.output(fmt.Errorf("invalid found:%s", c.group))
-					close(c.callback)
+					if c.count > 0 {
+						close(c.callback)
+					}
 					continue
 				}
 				var keys []interface{}
