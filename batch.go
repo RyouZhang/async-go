@@ -223,6 +223,7 @@ func MGet(group string, keys ...interface{}) []interface{} {
 		count:    len(keys),
 		callback: make(chan interface{}, len(keys)),
 	}
+	input <- c
 	results := make([]interface{})
 	for result := range c.callback {
 		results = appen(results, result)
