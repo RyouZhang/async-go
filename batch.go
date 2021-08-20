@@ -37,7 +37,16 @@ type group struct {
 type cmd struct {
 	group    string
 	key      interface{}
+	count    int
 	callback chan interface{}
+}
+
+func (c *cmd) output(res interface{}) {
+	c.callback <- res
+	c.count--
+	if c.count == 0 {
+		close(c.callback)
+	}
 }
 
 type batchCmd struct {
@@ -91,37 +100,46 @@ func runloop() {
 			{
 				g, ok := groupDic[c.group]
 				if false == ok {
-					c.callback <- fmt.Errorf("invalid group:%s", c.group)
+					c.output(fmt.Errorf("invalid found:%s", c.group))
 					close(c.callback)
 					continue
 				}
-				// cache provider
-				if g.cache != nil {
-					res, err := g.cache.Get(g.name, c.key)
-					if res != nil && err == nil {
-						c.callback <- res
-						close(c.callback)
-						continue
-					}
-				}
-				target, ok := g.cmdDic[c.key]
-				if ok {
-					g.cmdDic[c.key] = append(target, c)
+				var keys []interface{}
+				if c.count > 1 {
+					keys = c.key.([]interface{})
 				} else {
-					g.cmdDic[c.key] = []*cmd{c}
-					g.keyDic[c.key] = true
+					keys = []interface{}{c.key}
 				}
 
-				if len(g.keyDic) >= g.batchSize {
-					b := &batchCmd{group: g.name}
-					b.keys = make([]interface{}, len(g.keyDic))
-					index := 0
-					for k, _ := range g.keyDic {
-						b.keys[index] = k
-						index = index + 1
+				for index, _ := range keys {
+					key := keys[index]
+					// cache provider
+					if g.cache != nil {
+						res, err := g.cache.Get(g.name, key)
+						if res != nil && err == nil {
+							c.output(res)
+							continue
+						}
 					}
-					g.keyDic = make(map[interface{}]bool)
-					go doing(ctx, b, g.method)
+					target, ok := g.cmdDic[key]
+					if ok {
+						g.cmdDic[key] = append(target, c)
+					} else {
+						g.cmdDic[key] = []*cmd{c}
+						g.keyDic[key] = true
+					}
+
+					if len(g.keyDic) >= g.batchSize {
+						b := &batchCmd{group: g.name}
+						b.keys = make([]interface{}, len(g.keyDic))
+						index := 0
+						for k, _ := range g.keyDic {
+							b.keys[index] = k
+							index = index + 1
+						}
+						g.keyDic = make(map[interface{}]bool)
+						go doing(ctx, b, g.method)
+					}
 				}
 			}
 		case b := <-output:
@@ -133,8 +151,7 @@ func runloop() {
 						if ok {
 							for index, _ := range target {
 								c := target[index]
-								c.callback <- b.err
-								close(c.callback)
+								c.output(b.err)
 							}
 						}
 						delete(g.cmdDic, key)
@@ -154,8 +171,7 @@ func runloop() {
 						if ok {
 							for index, _ := range target {
 								c := target[index]
-								c.callback <- res
-								close(c.callback)
+								c.output(res)
 							}
 						}
 						delete(g.cmdDic, key)
@@ -187,6 +203,7 @@ func Get(group string, key interface{}) (interface{}, error) {
 	c := &cmd{
 		group:    group,
 		key:      key,
+		count:    1,
 		callback: make(chan interface{}, 1),
 	}
 	input <- c
@@ -197,4 +214,18 @@ func Get(group string, key interface{}) (interface{}, error) {
 	default:
 		return res, nil
 	}
+}
+
+func MGet(group string, keys ...interface{}) []interface{} {
+	c := &cmd{
+		group:    group,
+		key:      keys,
+		count:    len(keys),
+		callback: make(chan interface{}, len(keys)),
+	}
+	results := make([]interface{})
+	for result := range c.callback {
+		results = appen(results, result)
+	}
+	return results
 }
