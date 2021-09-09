@@ -39,6 +39,7 @@ type cmd struct {
 	key      interface{}
 	count    int
 	callback chan interface{}
+	forced   bool
 }
 
 func (c *cmd) output(res interface{}) {
@@ -116,7 +117,7 @@ func runloop() {
 				for index, _ := range keys {
 					key := keys[index]
 					// cache provider
-					if g.cache != nil {
+					if g.cache != nil && c.forced == false {
 						res, err := g.cache.Get(g.name, key)
 						if res != nil && err == nil {
 							c.output(res)
@@ -202,11 +203,20 @@ func runloop() {
 }
 
 func Get(group string, key interface{}) (interface{}, error) {
+	return get(group, false, key)
+}
+
+func ForceGet(group string, key interface{}) (interface{}, error) {
+	return get(group, true, key)
+}
+
+func get(group string, forced bool, keys ...interface{}) (interface{}, error) {
 	c := &cmd{
 		group:    group,
 		key:      key,
 		count:    1,
 		callback: make(chan interface{}, 1),
+		forced:   forced,
 	}
 	input <- c
 	res := <-c.callback
@@ -219,11 +229,20 @@ func Get(group string, key interface{}) (interface{}, error) {
 }
 
 func MGet(group string, keys ...interface{}) []interface{} {
+	return mget(group, false, keys...)
+}
+
+func ForceMGet(group string, keys ...interface{}) []interface{} {
+	return mget(group, true, keys...)
+}
+
+func mget(group string, forced bool, keys ...interface{}) []interface{} {
 	c := &cmd{
 		group:    group,
 		key:      keys,
 		count:    len(keys),
 		callback: make(chan interface{}, len(keys)),
+		forced:   forced,
 	}
 	input <- c
 	results := make([]interface{}, 0)
