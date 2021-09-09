@@ -210,7 +210,7 @@ func ForceGet(group string, key interface{}) (interface{}, error) {
 	return get(group, true, key)
 }
 
-func get(group string, forced bool, keys ...interface{}) (interface{}, error) {
+func get(group string, forced bool, key interface{}) (interface{}, error) {
 	c := &cmd{
 		group:    group,
 		key:      key,
