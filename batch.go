@@ -12,6 +12,7 @@ var (
 	input    chan *cmd
 	output   chan *batchCmd
 	groupDic map[string]*group
+	groupMux sync.RWMutex
 )
 
 type CacheProvider interface {
@@ -62,9 +63,19 @@ func RegisterGroup(
 	batchSize int,
 	method func(...interface{}) (map[interface{}]interface{}, error),
 	cache CacheProvider) error {
+
+	groupMux.RLock()
 	_, ok := groupDic[name]
+	groupMux.RUnlock()
 	if ok {
 		return fmt.Errorf("duplicate group:%s", name)
+	}
+
+	groupMux.RLock()
+	defer groupMux.RUlock()
+	_, ok := groupDic[name]
+	if ok {
+		return nil
 	}
 	groupDic[name] = &group{
 		name:      name,
