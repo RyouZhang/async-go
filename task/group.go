@@ -24,9 +24,10 @@ type taskGroup struct {
 	tasks []Task
 
 	method func(...Task) (map[string]interface{}, error)
+	cp     TaskCacheProvider
 }
 
-func newTaskGroup(name string, batchSize int, maxWorker int, method func(...Task) (map[string]interface{}, error)) *taskGroup {
+func newTaskGroup(name string, batchSize int, maxWorker int, method func(...Task) (map[string]interface{}, error), cp TaskCacheProvider) *taskGroup {
 	tg := &taskGroup{
 		name:         name,
 		batchSize:    batchSize,
@@ -38,11 +39,41 @@ func newTaskGroup(name string, batchSize int, maxWorker int, method func(...Task
 		mergeTaskDic: make(map[string][]Task),
 		groupTaskDic: make(map[string][]Task),
 		method:       method,
+		cp:           cp,
 	}
 
 	go tg.runloop()
 
 	return tg
+}
+
+func (tg *taskGroup) getFromCache(t Task) interface{} {
+	if tg.cp != nil {
+		val, _ := tg.cp.Get(t.UniqueId())
+		if val != nil {
+			return val
+		}
+		_, ok := t.(MergeTask)
+		if ok {
+			val, _ = tg.cp.Get(t.(MergeTask).MergeBy())
+			return val
+		}
+	}
+	return nil
+}
+
+func (tg *taskGroup) putToCache(res *result) {
+	if res.err != nil {
+		return
+	}
+
+	if tg.cp != nil {
+		if len(res.mkey) > 0 {
+			tg.cp.Put(res.mkey, res.val)
+		} else {
+			tg.cp.Put(res.key, res.val)
+		}
+	}
 }
 
 func (tg *taskGroup) runloop() {
@@ -54,6 +85,18 @@ func (tg *taskGroup) runloop() {
 			{
 				for i, _ := range req.tasks {
 					t := req.tasks[i]
+
+					// cache
+					val := tg.getFromCache(t)
+					if val != nil {
+						req.callback <- &result{key: t.UniqueId(), val: val}
+						req.count--
+						if req.count == 0 {
+							close(req.callback)
+						}
+						continue
+					}
+
 					tg.taskToReq[t.UniqueId()] = req
 
 					_, ok := t.(MergeTask)
@@ -89,6 +132,9 @@ func (tg *taskGroup) runloop() {
 			}
 		case res := <-tg.resultQueue:
 			{
+				// cache
+				tg.putToCache(res)
+
 				//check merge
 				target, ok := tg.mergeTaskDic[res.mkey]
 				if ok {
@@ -189,36 +235,36 @@ func (tg *taskGroup) running(ctx context.Context, tasks []Task) {
 	tg.workerCount++
 	go func() {
 		defer func() {
-			tg.workerCount--	
+			tg.workerCount--
 		}()
 
 		_, err := async.Safety(func() (interface{}, error) {
-			res, err :=tg.method(tasks...)
+			res, err := tg.method(tasks...)
 			if err != nil {
 				return nil, err
 			}
-	
+
 			for i, _ := range tasks {
 				t := tasks[i]
-				
+
 				mkey := ""
 				_, ok := t.(MergeTask)
-				if ok {			
+				if ok {
 					mkey = t.(MergeTask).MergeBy()
 				}
 
 				val, ok := res[t.UniqueId()]
 				if ok {
 					tg.resultQueue <- &result{
-						key: t.UniqueId(),	
-						mkey: mkey,					
-						val: val,
+						key:  t.UniqueId(),
+						mkey: mkey,
+						val:  val,
 					}
 				} else {
 					tg.resultQueue <- &result{
-						key: t.UniqueId(),
-						mkey: mkey,	
-						val: nil,
+						key:  t.UniqueId(),
+						mkey: mkey,
+						val:  nil,
 					}
 				}
 			}
@@ -227,20 +273,20 @@ func (tg *taskGroup) running(ctx context.Context, tasks []Task) {
 		if err == nil {
 			return
 		}
-	
+
 		for i, _ := range tasks {
 			t := tasks[i]
 
 			mkey := ""
 			_, ok := t.(MergeTask)
-			if ok {			
+			if ok {
 				mkey = t.(MergeTask).MergeBy()
 			}
 
 			tg.resultQueue <- &result{
-				key: t.UniqueId(),
+				key:  t.UniqueId(),
 				mkey: mkey,
-				err: err,
+				err:  err,
 			}
 		}
 	}()
