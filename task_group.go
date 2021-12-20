@@ -8,16 +8,16 @@ import (
 )
 
 var (
-	one          sync.Once
-	input        chan *taskCmd
-	output       chan *batchTaskCmd
-	taskGroupDic map[string]*tashGroup
+	taskOne      sync.Once
+	taskInput    chan *taskCmd
+	taskOutput   chan *batchTaskCmd
+	taskGroupDic map[string]*taskGroup
 )
 
 func init() {
 	taskGroupDic = make(map[string]*group)
-	input = make(chan *taskCmd, 128)
-	output = make(chan *batchTaskCmd, 128)
+	taskInput = make(chan *taskCmd, 128)
+	taskOutput = make(chan *batchTaskCmd, 128)
 }
 
 type Task interface {
@@ -40,6 +40,7 @@ type taskGroup struct {
 type taskCmd struct {
 	group    string
 	tasks    []Task
+	count    int
 	callback chan *taskResult
 }
 
@@ -75,13 +76,13 @@ func RegisterTaskGroup(
 		taskCmdDic: make(map[string][]*taskCmd),
 		taskDic:    make(map[string]Task),
 	}
-	one.Do(func() {
+	taskOne.Do(func() {
 		go taskRunloop()
 	})
 	return nil
 }
 
-func doing(ctx context.Context, b *batchTaskCmd, method func(...Task) (map[string]interface{}, error)) {
+func execTask(ctx context.Context, b *batchTaskCmd, method func(...Task) (map[string]interface{}, error)) {
 	res, err := Safety(func() (interface{}, error) {
 		return method(b.tasks...)
 	})
@@ -90,7 +91,7 @@ func doing(ctx context.Context, b *batchTaskCmd, method func(...Task) (map[strin
 	} else {
 		b.result = res.(map[string]interface{})
 	}
-	output <- b
+	taskOutput <- b
 }
 
 func taskRunloop() {
@@ -98,7 +99,7 @@ func taskRunloop() {
 	timer := time.NewTimer(10 * time.Millisecond)
 	for {
 		select {
-		case c := <-input:
+		case c := <-taskInput:
 			{
 				g, ok := taskGroupDic[c.group]
 				if false == ok {
@@ -130,11 +131,11 @@ func taskRunloop() {
 							index = index + 1
 						}
 						g.taskDic = make(map[string]Task)
-						go doing(ctx, b, g.method)
+						go execTask(ctx, b, g.method)
 					}
 				}
 			}
-		case b := <-output:
+		case b := <-taskOutput:
 			{
 				g, _ := taskGroupDic[b.group]
 				if b.err != nil {
@@ -183,7 +184,7 @@ func taskRunloop() {
 							index = index + 1
 						}
 						g.taskDic = make(map[string]Task)
-						go doing(ctx, b, g.method)
+						go execTask(ctx, b, g.method)
 					}
 				}
 				timer.Reset(10 * time.Millisecond)
@@ -203,9 +204,10 @@ func exec(group string, task Task) (interface{}, error) {
 	c := &taskCmd{
 		group:    group,
 		tasks:    []Task{task},
+		count:    1,
 		callback: make(chan *taskResult, 1),
 	}
-	input <- c
+	taskInput <- c
 	res := <-c.callback
 	switch res.val.(type) {
 	case error:
@@ -226,9 +228,10 @@ func batchExec(group string, tasks ...Task) map[string]interface{} {
 	c := &cmd{
 		group:    group,
 		tasks:    tasks,
+		count:    len(tasks),
 		callback: make(chan *taskResult, len(tasks)),
 	}
-	input <- c
+	taskInput <- c
 	results := make(map[string]interface{})
 	for result := range c.callback {
 		results[result.key] = result.val
