@@ -15,7 +15,7 @@ var (
 )
 
 func init() {
-	taskGroupDic = make(map[string]*group)
+	taskGroupDic = make(map[string]*taskGroup)
 	taskInput = make(chan *taskCmd, 128)
 	taskOutput = make(chan *batchTaskCmd, 128)
 }
@@ -33,7 +33,7 @@ type taskGroup struct {
 	name       string
 	batchSize  int
 	method     func(...Task) (map[string]interface{}, error)
-	taskCmdDic map[interface{}][]*taskCmd
+	taskCmdDic map[string][]*taskCmd
 	taskDic    map[string]Task
 }
 
@@ -69,7 +69,7 @@ func RegisterTaskGroup(
 		return fmt.Errorf("duplicate task group:%s", name)
 	}
 
-	taskGroupDic[name] = &group{
+	taskGroupDic[name] = &taskGroup{
 		name:       name,
 		batchSize:  batchSize,
 		method:     method,
@@ -103,15 +103,12 @@ func taskRunloop() {
 			{
 				g, ok := taskGroupDic[c.group]
 				if false == ok {
-					c.output(fmt.Errorf("invalid found:%s", c.group))
-					if len(c.tasks) > 0 {
-						close(c.callback)
-					}
+					close(c.callback)
 					continue
 				}
 
 				for index, _ := range c.tasks {
-					task := tasks[index]
+					task := c.tasks[index]
 					key := task.Key()
 
 					target, ok := g.taskCmdDic[key]
@@ -147,7 +144,7 @@ func taskRunloop() {
 						if ok {
 							for index, _ := range target {
 								c := target[index]
-								c.output(&taskResult{key: key, val: c.err})
+								c.output(&taskResult{key: key, val: b.err})
 							}
 						}
 						delete(g.taskCmdDic, key)
@@ -218,14 +215,14 @@ func exec(group string, task Task) (interface{}, error) {
 }
 
 func BarchExec(group string, tasks ...Task) map[string]interface{} {
-	if task == nil || len(tasks) == 0 {
-		return nil, fmt.Errorf("invalid tasks")
+	if tasks == nil || len(tasks) == 0 {
+		return nil
 	}
 	return batchExec(group, tasks...)
 }
 
 func batchExec(group string, tasks ...Task) map[string]interface{} {
-	c := &cmd{
+	c := &taskCmd{
 		group:    group,
 		tasks:    tasks,
 		count:    len(tasks),
