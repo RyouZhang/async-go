@@ -62,10 +62,12 @@ func RegisterGroup(
 	batchSize int,
 	method func(...interface{}) (map[interface{}]interface{}, error),
 	cache CacheProvider) error {
+
 	_, ok := groupDic[name]
 	if ok {
 		return fmt.Errorf("duplicate group:%s", name)
 	}
+
 	groupDic[name] = &group{
 		name:      name,
 		batchSize: batchSize,
@@ -203,18 +205,14 @@ func runloop() {
 }
 
 func Get(group string, key interface{}) (interface{}, error) {
-	return exec(group, false, key)
+	return get(group, false, key)
 }
 
 func ForceGet(group string, key interface{}) (interface{}, error) {
-	return exec(group, true, key)
+	return get(group, true, key)
 }
 
-func Exec(group string, req interface{}) (interface{}, error) {
-	return exec(group, true, req)
-}
-
-func exec(group string, forced bool, key interface{}) (interface{}, error) {
+func get(group string, forced bool, key interface{}) (interface{}, error) {
 	c := &cmd{
 		group:    group,
 		key:      key,
@@ -233,18 +231,14 @@ func exec(group string, forced bool, key interface{}) (interface{}, error) {
 }
 
 func MGet(group string, keys ...interface{}) []interface{} {
-	return mexec(group, false, keys...)
+	return mget(group, false, keys...)
 }
 
 func ForceMGet(group string, keys ...interface{}) []interface{} {
-	return mexec(group, true, keys...)
+	return mget(group, true, keys...)
 }
 
-func MExec(group string, reqs ...interface{}) (interface{}, error) {
-	return mexec(group, true, reqs...)
-}
-
-func mexec(group string, forced bool, keys ...interface{}) []interface{} {
+func mget(group string, forced bool, keys ...interface{}) []interface{} {
 	c := &cmd{
 		group:    group,
 		key:      keys,
