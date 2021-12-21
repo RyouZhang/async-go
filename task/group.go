@@ -102,24 +102,30 @@ func (tg *taskGroup) runloop() {
 					_, ok := t.(MergeTask)
 					if ok {
 						mkey := t.(MergeTask).MergeBy()
-						target, ok := tg.mergeTaskDic[mkey]
-						if ok {
-							tg.mergeTaskDic[mkey] = append(target, t)
-							continue
-						} else {
-							tg.mergeTaskDic[mkey] = []Task{t}
+						if len(mkey) > 0 {
+							target, ok := tg.mergeTaskDic[mkey]
+							if ok {
+								tg.mergeTaskDic[mkey] = append(target, t)
+								continue
+							} else {
+								tg.mergeTaskDic[mkey] = []Task{t}
+							}
 						}
 					}
 
 					_, ok = t.(GroupTask)
 					if ok {
 						gkey := t.(GroupTask).GroupBy()
-						target, ok := tg.groupTaskDic[gkey]
-						if ok {
-							tg.groupTaskDic[gkey] = append(target, t)
-							continue
+						if len(gkey) > 0 {
+							target, ok := tg.groupTaskDic[gkey]
+							if ok {
+								tg.groupTaskDic[gkey] = append(target, t)
+								continue
+							} else {
+								tg.groupTaskDic[gkey] = []Task{t}
+							}
 						} else {
-							tg.groupTaskDic[gkey] = []Task{t}
+							tg.tasks = append(tg.tasks, t)
 						}
 					} else {
 						tg.tasks = append(tg.tasks, t)
@@ -207,8 +213,13 @@ CLEAN:
 func (tg *taskGroup) timerSchedule(ctx context.Context) {
 
 	if len(tg.tasks) > 0 {
-		tg.running(ctx, tg.tasks)
-		tg.tasks = []Task{}
+		t := tg.tasks[0]
+		tg.running(ctx, []Task{t})
+		if len(tg.tasks) == 1{
+			tg.tasks = []Task{}
+		} else {
+			tg.tasks = tg.tasks[1:]
+		}		
 	}
 
 	delKeys := make([]string, 0)
