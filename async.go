@@ -46,7 +46,7 @@ func Retry(method func() (interface{}, error), maxCount int, interval time.Durat
 		if count >= maxCount {
 			return nil, err
 		}
-		<-time.After(interval * count)
+		<-time.After(time.Duration(count) * interval)
 	}
 }
 
