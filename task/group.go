@@ -185,8 +185,8 @@ func (tg *taskGroup) runloop() {
 
 func (tg *taskGroup) schedule(ctx context.Context) {
 
-	if len(tg.tasks) > tg.batchSize {
-		tg.running(ctx, tg.tasks)
+	if len(tg.tasks) >= tg.batchSize {
+		tg.processing(ctx, tg.tasks)
 		tg.tasks = []Task{}
 	}
 
@@ -198,8 +198,8 @@ func (tg *taskGroup) schedule(ctx context.Context) {
 		}
 
 		tasks := tg.groupTaskDic[gkey]
-		if len(tasks) > tg.batchSize {
-			tg.running(ctx, tasks)
+		if len(tasks) >= tg.batchSize {
+			tg.processing(ctx, tasks)
 			delKeys = append(delKeys, gkey)
 		}
 	}
@@ -214,12 +214,12 @@ func (tg *taskGroup) timerSchedule(ctx context.Context) {
 
 	if len(tg.tasks) > 0 {
 		t := tg.tasks[0]
-		tg.running(ctx, []Task{t})
-		if len(tg.tasks) == 1{
+		tg.processing(ctx, []Task{t})
+		if len(tg.tasks) == 1 {
 			tg.tasks = []Task{}
 		} else {
 			tg.tasks = tg.tasks[1:]
-		}		
+		}
 	}
 
 	delKeys := make([]string, 0)
@@ -231,7 +231,7 @@ func (tg *taskGroup) timerSchedule(ctx context.Context) {
 
 		tasks := tg.groupTaskDic[gkey]
 		if len(tasks) > 0 {
-			tg.running(ctx, tasks)
+			tg.processing(ctx, tasks)
 			delKeys = append(delKeys, gkey)
 		}
 	}
@@ -239,6 +239,19 @@ CLEAN:
 	for i, _ := range delKeys {
 		gkey := delKeys[i]
 		delete(tg.groupTaskDic, gkey)
+	}
+}
+
+func (tg *taskGroup) processing(ctx context.Context, tasks []Task) {
+	tasklist := tasks
+	for {
+		if len(tasklist) <= tg.batchSize {
+			tg.running(ctx, tasklist)
+			return
+		}
+		target := tasklist[:tg.batchSize]
+		tasklist = tasklist[tg.batchSize:]
+		tg.running(ctx, target)
 	}
 }
 
