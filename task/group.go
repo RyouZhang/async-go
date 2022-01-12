@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/RyouZhang/async-go"
@@ -10,9 +11,9 @@ import (
 type taskGroup struct {
 	name      string
 	batchSize int
-	maxWorker int
+	maxWorker int32
 
-	workerCount int
+	workerCount int32
 
 	requestQueue chan *request
 	resultQueue  chan *result
@@ -31,8 +32,8 @@ func newTaskGroup(name string, batchSize int, maxWorker int, method func(...Task
 	tg := &taskGroup{
 		name:         name,
 		batchSize:    batchSize,
-		maxWorker:    maxWorker,
-		workerCount:  0,
+		maxWorker:    int32(maxWorker),
+		workerCount:  int32(0),
 		requestQueue: make(chan *request, 256),
 		resultQueue:  make(chan *result, 256),
 		taskToReq:    make(map[string]*request),
@@ -96,9 +97,8 @@ func (tg *taskGroup) runloop() {
 						}
 						continue
 					}
-
 					tg.taskToReq[t.UniqueId()] = req
-
+					// merge
 					_, ok := t.(MergeTask)
 					if ok {
 						mkey := t.(MergeTask).MergeBy()
@@ -112,7 +112,7 @@ func (tg *taskGroup) runloop() {
 							}
 						}
 					}
-
+					// group
 					_, ok = t.(GroupTask)
 					if ok {
 						gkey := t.(GroupTask).GroupBy()
@@ -123,15 +123,14 @@ func (tg *taskGroup) runloop() {
 								continue
 							} else {
 								tg.groupTaskDic[gkey] = []Task{t}
+								goto S1
 							}
-						} else {
-							tg.tasks = append(tg.tasks, t)
 						}
-					} else {
-						tg.tasks = append(tg.tasks, t)
 					}
-
-					if tg.workerCount < tg.maxWorker {
+					// default
+					tg.tasks = append(tg.tasks, t)
+				S1:
+					if atomic.LoadInt32(&tg.workerCount) < tg.maxWorker {
 						tg.schedule(ctx)
 					}
 				}
@@ -140,41 +139,44 @@ func (tg *taskGroup) runloop() {
 			{
 				// cache
 				tg.putToCache(res)
-
 				//check merge
-				target, ok := tg.mergeTaskDic[res.mkey]
-				if ok {
-					for i, _ := range target {
-						t := target[i]
-						req, ok := tg.taskToReq[t.UniqueId()]
-						if ok {
-							req.callback <- &result{
-								key: t.UniqueId(),
-								val: res.val,
-								err: res.err,
-							}
-							req.count--
-							if req.count == 0 {
-								close(req.callback)
-							}
-						}
-					}
-					delete(tg.mergeTaskDic, res.mkey)
-				} else {
-					req, ok := tg.taskToReq[res.key]
+				if len(res.mkey) > 0 {
+					target, ok := tg.mergeTaskDic[res.mkey]
 					if ok {
-						req.callback <- res
-						req.count--
-						if req.count == 0 {
-							close(req.callback)
+						for i, _ := range target {
+							t := target[i]
+							req, ok := tg.taskToReq[t.UniqueId()]
+							if ok {
+								req.callback <- &result{
+									key: t.UniqueId(),
+									val: res.val,
+									err: res.err,
+								}
+								req.count--
+								if req.count == 0 {
+									close(req.callback)
+								}
+								delete(tg.taskToReq, t.UniqueId())
+							}
 						}
+						delete(tg.mergeTaskDic, res.mkey)
 					}
 				}
-				tg.schedule(ctx)
+				req, ok := tg.taskToReq[res.key]
+				if ok {
+					req.callback <- res
+					req.count--
+					if req.count == 0 {
+						close(req.callback)
+					}
+				}
+				if atomic.LoadInt32(&tg.workerCount) < tg.maxWorker {
+					tg.schedule(ctx)
+				}
 			}
 		case <-timer.C:
 			{
-				if tg.workerCount < tg.maxWorker {
+				if atomic.LoadInt32(&tg.workerCount) < tg.maxWorker {
 					tg.timerSchedule(ctx)
 				}
 				timer.Reset(10 * time.Millisecond)
@@ -184,16 +186,11 @@ func (tg *taskGroup) runloop() {
 }
 
 func (tg *taskGroup) schedule(ctx context.Context) {
-
-	if len(tg.tasks) >= tg.batchSize {
-		tg.processing(ctx, tg.tasks)
-		tg.tasks = []Task{}
-	}
-
 	delKeys := make([]string, 0)
+	index := -1
 
 	for gkey, _ := range tg.groupTaskDic {
-		if tg.workerCount == tg.maxWorker {
+		if atomic.LoadInt32(&tg.workerCount) == tg.maxWorker {
 			goto CLEAN
 		}
 
@@ -203,7 +200,23 @@ func (tg *taskGroup) schedule(ctx context.Context) {
 			delKeys = append(delKeys, gkey)
 		}
 	}
+
+	for i, _ := range tg.tasks {
+		if atomic.LoadInt32(&tg.workerCount) == tg.maxWorker {
+			goto CLEAN
+		}
+
+		t := tg.tasks[i]
+		tg.processing(ctx, []Task{t})
+		index = i
+	}
 CLEAN:
+	if index == len(tg.tasks)-1 {
+		tg.tasks = []Task{}
+	} else {
+		tg.tasks = tg.tasks[index+1:]
+	}
+
 	for i, _ := range delKeys {
 		gkey := delKeys[i]
 		delete(tg.groupTaskDic, gkey)
@@ -211,21 +224,11 @@ CLEAN:
 }
 
 func (tg *taskGroup) timerSchedule(ctx context.Context) {
-
-	if len(tg.tasks) > 0 {
-		t := tg.tasks[0]
-		tg.processing(ctx, []Task{t})
-		if len(tg.tasks) == 1 {
-			tg.tasks = []Task{}
-		} else {
-			tg.tasks = tg.tasks[1:]
-		}
-	}
-
 	delKeys := make([]string, 0)
+	index := -1
 
 	for gkey, _ := range tg.groupTaskDic {
-		if tg.workerCount == tg.maxWorker {
+		if atomic.LoadInt32(&tg.workerCount) == tg.maxWorker {
 			goto CLEAN
 		}
 
@@ -235,7 +238,23 @@ func (tg *taskGroup) timerSchedule(ctx context.Context) {
 			delKeys = append(delKeys, gkey)
 		}
 	}
+
+	for i, _ := range tg.tasks {
+		if atomic.LoadInt32(&tg.workerCount) == tg.maxWorker {
+			goto CLEAN
+		}
+
+		t := tg.tasks[i]
+		tg.processing(ctx, []Task{t})
+		index = i
+	}
 CLEAN:
+	if index == len(tg.tasks)-1 {
+		tg.tasks = []Task{}
+	} else {
+		tg.tasks = tg.tasks[index+1:]
+	}
+
 	for i, _ := range delKeys {
 		gkey := delKeys[i]
 		delete(tg.groupTaskDic, gkey)
@@ -256,13 +275,14 @@ func (tg *taskGroup) processing(ctx context.Context, tasks []Task) {
 }
 
 func (tg *taskGroup) running(ctx context.Context, tasks []Task) {
-	tg.workerCount++
+	atomic.AddInt32(&tg.workerCount, 1)
 	go func() {
 		defer func() {
-			tg.workerCount--
+			atomic.AddInt32(&tg.workerCount, -1)
 		}()
 
 		_, err := async.Safety(func() (interface{}, error) {
+
 			res, err := tg.method(tasks...)
 			if err != nil {
 				return nil, err
