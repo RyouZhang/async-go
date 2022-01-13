@@ -158,6 +158,7 @@ func (tg *taskGroup) runloop() {
 							t := target[i]
 							req, ok := tg.taskToReq[t.UniqueId()]
 							if ok {
+
 								req.callback <- &result{
 									key: t.UniqueId(),
 									val: res.val,
@@ -171,6 +172,11 @@ func (tg *taskGroup) runloop() {
 							}
 						}
 						delete(tg.mergeTaskDic, res.mkey)
+
+						if atomic.LoadInt32(&tg.workerCount) < tg.maxWorker {
+							tg.schedule(ctx)
+						}
+						continue
 					}
 				}
 				req, ok := tg.taskToReq[res.key]
