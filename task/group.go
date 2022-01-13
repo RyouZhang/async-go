@@ -125,7 +125,7 @@ func (tg *taskGroup) runloop() {
 								tg.groupTaskDic[gkey] = []Task{t}
 								goto S1
 							}
-						}
+						}						
 					}
 					// default
 					tg.tasks = append(tg.tasks, t)
@@ -167,9 +167,9 @@ func (tg *taskGroup) runloop() {
 					req.callback <- res
 					req.count--
 					if req.count == 0 {
-						close(req.callback)
-						delete(tg.taskToReq, res.key)
+						close(req.callback)			
 					}				
+					delete(tg.taskToReq, res.key)
 				}
 				if atomic.LoadInt32(&tg.workerCount) < tg.maxWorker {
 					tg.schedule(ctx)
