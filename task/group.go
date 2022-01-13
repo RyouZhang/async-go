@@ -198,9 +198,21 @@ func (tg *taskGroup) runloop() {
 }
 
 func (tg *taskGroup) schedule(ctx context.Context) {
-	delKeys := make([]string, 0)
-	index := -1
+	tg.scheduleGroupTask(ctx, tg.batchSize)
+	tg.scheduleTask(ctx)
+}
 
+func (tg *taskGroup) timerSchedule(ctx context.Context) {
+	tg.scheduleGroupTask(ctx, 0)
+	tg.scheduleTask(ctx)
+}
+
+func (tg *taskGroup) scheduleGroupTask(ctx context.Context, max int) {
+	if len(tg.groupTaskDic) == 0 {
+		return
+	}
+
+	delKeys := make([]string, 0)
 	for gkey, _ := range tg.groupTaskDic {
 		if atomic.LoadInt32(&tg.workerCount) == tg.maxWorker {
 			goto CLEAN
@@ -212,64 +224,40 @@ func (tg *taskGroup) schedule(ctx context.Context) {
 			delKeys = append(delKeys, gkey)
 		}
 	}
-
-	for i, _ := range tg.tasks {
-		if atomic.LoadInt32(&tg.workerCount) == tg.maxWorker {
-			goto CLEAN
-		}
-
-		t := tg.tasks[i]
-		tg.processing(ctx, []Task{t})
-		index = i
-	}
 CLEAN:
-	if index == len(tg.tasks)-1 {
-		tg.tasks = []Task{}
-	} else {
-		tg.tasks = tg.tasks[index+1:]
-	}
-
 	for i, _ := range delKeys {
 		gkey := delKeys[i]
 		delete(tg.groupTaskDic, gkey)
 	}
 }
 
-func (tg *taskGroup) timerSchedule(ctx context.Context) {
-	delKeys := make([]string, 0)
-	index := -1
-
-	for gkey, _ := range tg.groupTaskDic {
-		if atomic.LoadInt32(&tg.workerCount) == tg.maxWorker {
-			goto CLEAN
-		}
-
-		tasks := tg.groupTaskDic[gkey]
-		if len(tasks) > 0 {
-			tg.processing(ctx, tasks)
-			delKeys = append(delKeys, gkey)
-		}
+func (tg *taskGroup) scheduleTask(ctx context.Context) {
+	if len(tg.tasks) == 0 {
+		return
 	}
 
-	for i, _ := range tg.tasks {
-		if atomic.LoadInt32(&tg.workerCount) == tg.maxWorker {
-			goto CLEAN
+	index := 0
+	for {
+		if index >= len(tg.tasks) || atomic.LoadInt32(&tg.workerCount) == tg.maxWorker {
+			break
 		}
 
-		t := tg.tasks[i]
+		t := tg.tasks[index]
 		tg.processing(ctx, []Task{t})
-		index = i
-	}
-CLEAN:
-	if index == len(tg.tasks)-1 {
-		tg.tasks = []Task{}
-	} else {
-		tg.tasks = tg.tasks[index+1:]
+		index = index + 1
 	}
 
-	for i, _ := range delKeys {
-		gkey := delKeys[i]
-		delete(tg.groupTaskDic, gkey)
+	switch {
+	case index >= len(tg.tasks):
+		{
+			tg.tasks = []Task{}
+		}
+	case index == len(tg.tasks)-1:
+		{
+			tg.tasks = []Task{tg.tasks[index]}
+		}
+	default:
+		tg.tasks = tg.tasks[index:]
 	}
 }
 
