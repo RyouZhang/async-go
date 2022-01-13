@@ -39,6 +39,7 @@ func newTaskGroup(name string, batchSize int, maxWorker int, method func(...Task
 		taskToReq:    make(map[string]*request),
 		mergeTaskDic: make(map[string][]Task),
 		groupTaskDic: make(map[string][]Task),
+		tasks:        make([]Task, 0),
 		method:       method,
 		cp:           cp,
 	}
@@ -120,19 +121,17 @@ func (tg *taskGroup) runloop() {
 							target, ok := tg.groupTaskDic[gkey]
 							if ok {
 								tg.groupTaskDic[gkey] = append(target, t)
-								continue
 							} else {
 								tg.groupTaskDic[gkey] = []Task{t}
-								goto S1
 							}
+							continue
 						}
 					}
 					// default
 					tg.tasks = append(tg.tasks, t)
-				S1:
-					if atomic.LoadInt32(&tg.workerCount) < tg.maxWorker {
-						tg.schedule(ctx)
-					}
+				}
+				if atomic.LoadInt32(&tg.workerCount) < tg.maxWorker {
+					tg.schedule(ctx)
 				}
 			}
 		case res := <-tg.resultQueue:
@@ -156,7 +155,7 @@ func (tg *taskGroup) runloop() {
 								if req.count == 0 {
 									close(req.callback)
 									delete(tg.taskToReq, t.UniqueId())
-								}								
+								}
 							}
 						}
 						delete(tg.mergeTaskDic, res.mkey)
@@ -168,8 +167,8 @@ func (tg *taskGroup) runloop() {
 					req.count--
 					if req.count == 0 {
 						close(req.callback)
-						delete(tg.taskToReq, res.key)
-					}				
+					}
+					delete(tg.taskToReq, res.key)
 				}
 				if atomic.LoadInt32(&tg.workerCount) < tg.maxWorker {
 					tg.schedule(ctx)
