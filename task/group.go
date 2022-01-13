@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -98,9 +99,20 @@ func (tg *taskGroup) runloop() {
 						}
 						continue
 					}
-					tg.taskToReq[t.UniqueId()] = req
+					_, ok := tg.taskToReq[t.UniqueId()]
+					if !ok {
+						tg.taskToReq[t.UniqueId()] = req
+					} else {
+						req.callback <- &result{key: t.UniqueId(), err: fmt.Errorf("duplicate unique id %s", t.UniqueId())}
+						req.count--
+						if req.count == 0 {
+							close(req.callback)
+						}
+						continue
+					}
+
 					// merge
-					_, ok := t.(MergeTask)
+					_, ok = t.(MergeTask)
 					if ok {
 						mkey := t.(MergeTask).MergeBy()
 						if len(mkey) > 0 {
