@@ -34,8 +34,8 @@ func newTaskGroup(name string, batchSize int, maxWorker int, method func(...Task
 		batchSize:    batchSize,
 		maxWorker:    int32(maxWorker),
 		workerCount:  int32(0),
-		requestQueue: make(chan *request, 256),
-		resultQueue:  make(chan *result, 256),
+		requestQueue: make(chan *request, 128),
+		resultQueue:  make(chan *result, 128),
 		taskToReq:    make(map[string]*request),
 		mergeTaskDic: make(map[string][]Task),
 		groupTaskDic: make(map[string][]Task),
@@ -155,8 +155,8 @@ func (tg *taskGroup) runloop() {
 								req.count--
 								if req.count == 0 {
 									close(req.callback)
-								}
-								delete(tg.taskToReq, t.UniqueId())
+									delete(tg.taskToReq, t.UniqueId())
+								}								
 							}
 						}
 						delete(tg.mergeTaskDic, res.mkey)
@@ -168,7 +168,8 @@ func (tg *taskGroup) runloop() {
 					req.count--
 					if req.count == 0 {
 						close(req.callback)
-					}
+						delete(tg.taskToReq, res.key)
+					}				
 				}
 				if atomic.LoadInt32(&tg.workerCount) < tg.maxWorker {
 					tg.schedule(ctx)
