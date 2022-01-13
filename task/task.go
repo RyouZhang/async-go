@@ -111,22 +111,10 @@ func BatchExec(ctx context.Context, taskGroup string, in ...Task) map[string]int
 		return nil
 	}
 
-	// filter dupilicate task
-	taskDic := make(map[string]bool)
-	validTasks := make([]Task, 0)
-	for i, _ := range in {
-		key := in[i].UniqueId()
-		_, ok := taskDic[key]
-		if !ok {
-			taskDic[key] = true
-			validTasks = append(validTasks, in[i])
-		}
-	}
-
-	count := len(validTasks)
+	count := len(in)
 
 	req := &request{
-		tasks:    validTasks,
+		tasks:    in,
 		count:    count,
 		callback: make(chan *result, count),
 	}
