@@ -220,12 +220,11 @@ func (tg *taskGroup) scheduleGroupTask(ctx context.Context, max int) {
 
 	delKeys := make([]string, 0)
 	for gkey, _ := range tg.groupTaskDic {
-		if atomic.LoadInt32(&tg.workerCount) == tg.maxWorker {
-			goto CLEAN
-		}
-
 		tasks := tg.groupTaskDic[gkey]
-		if len(tasks) >= tg.batchSize {
+		if len(tasks) >= max {
+			if atomic.LoadInt32(&tg.workerCount) == tg.maxWorker {
+				goto CLEAN
+			}
 			tg.processing(ctx, tasks)
 			delKeys = append(delKeys, gkey)
 		}
@@ -247,7 +246,6 @@ func (tg *taskGroup) scheduleTask(ctx context.Context) {
 		if index >= len(tg.tasks) || atomic.LoadInt32(&tg.workerCount) == tg.maxWorker {
 			break
 		}
-
 		t := tg.tasks[index]
 		tg.processing(ctx, []Task{t})
 		index = index + 1
