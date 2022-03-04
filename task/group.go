@@ -22,10 +22,9 @@ type taskGroup struct {
 	tasks []Task
 
 	method func(...Task) (map[string]interface{}, error)
-	cp     TaskCacheProvider
 }
 
-func newTaskGroup(name string, batchSize int, maxWorker int, method func(...Task) (map[string]interface{}, error), cp TaskCacheProvider) *taskGroup {
+func newTaskGroup(name string, batchSize int, maxWorker int, method func(...Task) (map[string]interface{}, error)) *taskGroup {
 	tg := &taskGroup{
 		name:         name,
 		batchSize:    batchSize,
@@ -36,41 +35,11 @@ func newTaskGroup(name string, batchSize int, maxWorker int, method func(...Task
 		groupTaskDic: make(map[string][]Task),
 		tasks:        make([]Task, 0),
 		method:       method,
-		cp:           cp,
 	}
 
 	go tg.runloop()
 
 	return tg
-}
-
-func (tg *taskGroup) getFromCache(t Task) interface{} {
-	if tg.cp != nil {
-		val, _ := tg.cp.Get(t.UniqueId())
-		if val != nil {
-			return val
-		}
-		_, ok := t.(MergeTask)
-		if ok {
-			val, _ = tg.cp.Get(t.(MergeTask).MergeBy())
-			return val
-		}
-	}
-	return nil
-}
-
-func (tg *taskGroup) putToCache(res *result) {
-	if res.err != nil {
-		return
-	}
-
-	if tg.cp != nil {
-		if len(res.mkey) > 0 {
-			tg.cp.Put(res.mkey, res.val)
-		} else {
-			tg.cp.Put(res.key, res.val)
-		}
-	}
 }
 
 func (tg *taskGroup) runloop() {
@@ -84,16 +53,6 @@ func (tg *taskGroup) runloop() {
 				for i, _ := range req.tasks {
 					t := req.tasks[i]
 
-					// cache
-					val := tg.getFromCache(t)
-					if val != nil {
-						req.callback <- &result{key: t.UniqueId(), val: val}
-						req.count--
-						if req.count == 0 {
-							close(req.callback)
-						}
-						continue
-					}
 					_, ok := tg.taskToReq[t.UniqueId()]
 					if !ok {
 						tg.taskToReq[t.UniqueId()] = req
@@ -137,12 +96,10 @@ func (tg *taskGroup) runloop() {
 					// default
 					tg.tasks = append(tg.tasks, t)
 				}
-				tg.schedule(ctx)				
+				tg.schedule(ctx)
 			}
 		case res := <-tg.resultQueue:
 			{
-				// cache
-				tg.putToCache(res)
 				//check merge
 				if len(res.mkey) > 0 {
 					target, ok := tg.mergeTaskDic[res.mkey]
@@ -164,7 +121,7 @@ func (tg *taskGroup) runloop() {
 								}
 							}
 						}
-						delete(tg.mergeTaskDic, res.mkey)				
+						delete(tg.mergeTaskDic, res.mkey)
 					}
 				} else {
 					req, ok := tg.taskToReq[res.key]
@@ -177,7 +134,7 @@ func (tg *taskGroup) runloop() {
 						delete(tg.taskToReq, res.key)
 					}
 				}
-				tg.schedule(ctx)				
+				tg.schedule(ctx)
 			}
 		case <-timer.C:
 			{
