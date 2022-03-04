@@ -15,6 +15,9 @@ type taskGroup struct {
 	requestQueue chan *request
 	resultQueue  chan *result
 
+	workerCount int
+	maxWorker   int
+
 	taskToReq    map[string]*request
 	mergeTaskDic map[string][]Task
 	groupTaskDic map[string][]Task
@@ -30,6 +33,8 @@ func newTaskGroup(name string, batchSize int, maxWorker int, method func(...Task
 		batchSize:    batchSize,
 		requestQueue: make(chan *request, 128),
 		resultQueue:  make(chan *result, 128),
+		workerCount:  0,
+		maxWorker:    maxWorker,
 		taskToReq:    make(map[string]*request),
 		mergeTaskDic: make(map[string][]Task),
 		groupTaskDic: make(map[string][]Task),
@@ -46,7 +51,6 @@ func (tg *taskGroup) runloop() {
 	ctx := context.Background()
 	timer := time.NewTimer(10 * time.Millisecond)
 	for {
-		fmt.Println(len(tg.tasks), "|", len(tg.mergeTaskDic), "|", len(tg.groupTaskDic), "|", len(tg.taskToReq))
 		select {
 		case req := <-tg.requestQueue:
 			{
@@ -100,6 +104,7 @@ func (tg *taskGroup) runloop() {
 			}
 		case res := <-tg.resultQueue:
 			{
+				tg.workerCount--
 				//check merge
 				if len(res.mkey) > 0 {
 					target, ok := tg.mergeTaskDic[res.mkey]
@@ -108,7 +113,6 @@ func (tg *taskGroup) runloop() {
 							t := target[i]
 							req, ok := tg.taskToReq[t.UniqueId()]
 							if ok {
-
 								req.callback <- &result{
 									key: t.UniqueId(),
 									val: res.val,
@@ -117,8 +121,8 @@ func (tg *taskGroup) runloop() {
 								req.count--
 								if req.count == 0 {
 									close(req.callback)
-									delete(tg.taskToReq, t.UniqueId())
 								}
+								delete(tg.taskToReq, t.UniqueId())
 							}
 						}
 						delete(tg.mergeTaskDic, res.mkey)
@@ -156,18 +160,36 @@ func (tg *taskGroup) timerSchedule(ctx context.Context) {
 }
 
 func (tg *taskGroup) scheduleGroupTask(ctx context.Context, max int) {
-	if len(tg.groupTaskDic) == 0 {
+	if tg.workerCount >= tg.maxWorker {
 		return
 	}
 
 	delKeys := make([]string, 0)
 	for gkey, _ := range tg.groupTaskDic {
 		tasks := tg.groupTaskDic[gkey]
-		if len(tasks) >= max {
-			tg.processing(ctx, tasks)
-			delKeys = append(delKeys, gkey)
+
+		if len(tasks) < max {
+			continue
+		}
+
+		tasklist := tasks
+		for {
+			if tg.workerCount >= tg.maxWorker {
+				goto CLEAN
+			}
+			if len(tasklist) <= tg.batchSize {
+				tg.workerCount++
+				go tg.running(ctx, tasklist)
+				delKeys = append(delKeys, gkey)
+				break
+			}
+			target := tasklist[:tg.batchSize]
+			tasklist = tasklist[tg.batchSize:]
+			tg.workerCount++
+			go tg.running(ctx, target)
 		}
 	}
+CLEAN:
 	for i, _ := range delKeys {
 		gkey := delKeys[i]
 		delete(tg.groupTaskDic, gkey)
@@ -175,50 +197,24 @@ func (tg *taskGroup) scheduleGroupTask(ctx context.Context, max int) {
 }
 
 func (tg *taskGroup) scheduleTask(ctx context.Context) {
-	if len(tg.tasks) == 0 {
-		return
-	}
-
-	index := 0
 	for {
-		if index >= len(tg.tasks) {
+		if tg.workerCount >= tg.maxWorker || len(tg.tasks) == 0 {
 			break
 		}
-		t := tg.tasks[index]
-		tg.processing(ctx, []Task{t})
-		index = index + 1
-	}
 
-	switch {
-	case index >= len(tg.tasks):
-		{
-			tg.tasks = []Task{}
+		t := tg.tasks[0]
+		tg.workerCount++
+		go tg.running(ctx, []Task{t})
+		if len(tg.tasks) == 1 {
+			tg.tasks = tg.tasks[:0]
+		} else {
+			tg.tasks = tg.tasks[1:]
 		}
-	case index == len(tg.tasks)-1:
-		{
-			tg.tasks = []Task{tg.tasks[index]}
-		}
-	default:
-		tg.tasks = tg.tasks[index:]
-	}
-}
-
-func (tg *taskGroup) processing(ctx context.Context, tasks []Task) {
-	tasklist := tasks
-	for {
-		if len(tasklist) <= tg.batchSize {
-			go tg.running(ctx, tasklist)
-			return
-		}
-		target := tasklist[:tg.batchSize]
-		tasklist = tasklist[tg.batchSize:]
-		go tg.running(ctx, target)
 	}
 }
 
 func (tg *taskGroup) running(ctx context.Context, tasks []Task) {
 	_, err := async.Safety(func() (interface{}, error) {
-
 		res, err := tg.method(tasks...)
 		if err != nil {
 			return nil, err
