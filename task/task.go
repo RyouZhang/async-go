@@ -39,19 +39,13 @@ type request struct {
 	callback chan *result
 }
 
-type TaskCacheProvider interface {
-	Put(string, interface{})
-	Get(string) (interface{}, error)
-}
-
 type Option struct {
 	maxWorker int
 	batchSize int
-	cp        TaskCacheProvider
 }
 
 func DefaultOption() *Option {
-	return &Option{maxWorker: 8, batchSize: 32, cp: nil}
+	return &Option{maxWorker: 8, batchSize: 32}
 }
 
 func (opt *Option) WithMaxWoker(max int) *Option {
@@ -64,18 +58,13 @@ func (opt *Option) WithBatchSize(batchSize int) *Option {
 	return opt
 }
 
-func (opt *Option) WithCacheProvider(cp TaskCacheProvider) *Option {
-	opt.cp = cp
-	return opt
-}
-
 func RegisterTaskGroup(taskGroup string, method func(...Task) (map[string]interface{}, error), opt *Option) {
 	taskGroupMux.Lock()
 	defer taskGroupMux.Unlock()
 	if opt == nil {
-		taskGroupDic[taskGroup] = newTaskGroup(taskGroup, 32, 8, method, nil)
+		taskGroupDic[taskGroup] = newTaskGroup(taskGroup, 32, 8, method)
 	} else {
-		taskGroupDic[taskGroup] = newTaskGroup(taskGroup, opt.batchSize, opt.maxWorker, method, opt.cp)
+		taskGroupDic[taskGroup] = newTaskGroup(taskGroup, opt.batchSize, opt.maxWorker, method)
 	}
 }
 

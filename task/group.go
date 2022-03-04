@@ -3,7 +3,6 @@ package task
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
 	"time"
 
 	"github.com/RyouZhang/async-go"
@@ -12,12 +11,12 @@ import (
 type taskGroup struct {
 	name      string
 	batchSize int
-	maxWorker int32
-
-	workerCount int32
 
 	requestQueue chan *request
 	resultQueue  chan *result
+
+	workerCount int
+	maxWorker   int
 
 	taskToReq    map[string]*request
 	mergeTaskDic map[string][]Task
@@ -26,57 +25,26 @@ type taskGroup struct {
 	tasks []Task
 
 	method func(...Task) (map[string]interface{}, error)
-	cp     TaskCacheProvider
 }
 
-func newTaskGroup(name string, batchSize int, maxWorker int, method func(...Task) (map[string]interface{}, error), cp TaskCacheProvider) *taskGroup {
+func newTaskGroup(name string, batchSize int, maxWorker int, method func(...Task) (map[string]interface{}, error)) *taskGroup {
 	tg := &taskGroup{
 		name:         name,
 		batchSize:    batchSize,
-		maxWorker:    int32(maxWorker),
-		workerCount:  int32(0),
 		requestQueue: make(chan *request, 128),
 		resultQueue:  make(chan *result, 128),
+		workerCount:  0,
+		maxWorker:    maxWorker,
 		taskToReq:    make(map[string]*request),
 		mergeTaskDic: make(map[string][]Task),
 		groupTaskDic: make(map[string][]Task),
 		tasks:        make([]Task, 0),
 		method:       method,
-		cp:           cp,
 	}
 
 	go tg.runloop()
 
 	return tg
-}
-
-func (tg *taskGroup) getFromCache(t Task) interface{} {
-	if tg.cp != nil {
-		val, _ := tg.cp.Get(t.UniqueId())
-		if val != nil {
-			return val
-		}
-		_, ok := t.(MergeTask)
-		if ok {
-			val, _ = tg.cp.Get(t.(MergeTask).MergeBy())
-			return val
-		}
-	}
-	return nil
-}
-
-func (tg *taskGroup) putToCache(res *result) {
-	if res.err != nil {
-		return
-	}
-
-	if tg.cp != nil {
-		if len(res.mkey) > 0 {
-			tg.cp.Put(res.mkey, res.val)
-		} else {
-			tg.cp.Put(res.key, res.val)
-		}
-	}
 }
 
 func (tg *taskGroup) runloop() {
@@ -89,16 +57,6 @@ func (tg *taskGroup) runloop() {
 				for i, _ := range req.tasks {
 					t := req.tasks[i]
 
-					// cache
-					val := tg.getFromCache(t)
-					if val != nil {
-						req.callback <- &result{key: t.UniqueId(), val: val}
-						req.count--
-						if req.count == 0 {
-							close(req.callback)
-						}
-						continue
-					}
 					_, ok := tg.taskToReq[t.UniqueId()]
 					if !ok {
 						tg.taskToReq[t.UniqueId()] = req
@@ -142,14 +100,11 @@ func (tg *taskGroup) runloop() {
 					// default
 					tg.tasks = append(tg.tasks, t)
 				}
-				if atomic.LoadInt32(&tg.workerCount) < tg.maxWorker {
-					tg.schedule(ctx)
-				}
+				tg.schedule(ctx)
 			}
 		case res := <-tg.resultQueue:
 			{
-				// cache
-				tg.putToCache(res)
+				tg.workerCount--
 				//check merge
 				if len(res.mkey) > 0 {
 					target, ok := tg.mergeTaskDic[res.mkey]
@@ -158,7 +113,6 @@ func (tg *taskGroup) runloop() {
 							t := target[i]
 							req, ok := tg.taskToReq[t.UniqueId()]
 							if ok {
-
 								req.callback <- &result{
 									key: t.UniqueId(),
 									val: res.val,
@@ -167,36 +121,28 @@ func (tg *taskGroup) runloop() {
 								req.count--
 								if req.count == 0 {
 									close(req.callback)
-									delete(tg.taskToReq, t.UniqueId())
 								}
+								delete(tg.taskToReq, t.UniqueId())
 							}
 						}
 						delete(tg.mergeTaskDic, res.mkey)
-
-						if atomic.LoadInt32(&tg.workerCount) < tg.maxWorker {
-							tg.schedule(ctx)
+					}
+				} else {
+					req, ok := tg.taskToReq[res.key]
+					if ok {
+						req.callback <- res
+						req.count--
+						if req.count == 0 {
+							close(req.callback)
 						}
-						continue
+						delete(tg.taskToReq, res.key)
 					}
 				}
-				req, ok := tg.taskToReq[res.key]
-				if ok {
-					req.callback <- res
-					req.count--
-					if req.count == 0 {
-						close(req.callback)
-					}
-					delete(tg.taskToReq, res.key)
-				}
-				if atomic.LoadInt32(&tg.workerCount) < tg.maxWorker {
-					tg.schedule(ctx)
-				}
+				tg.schedule(ctx)
 			}
 		case <-timer.C:
 			{
-				if atomic.LoadInt32(&tg.workerCount) < tg.maxWorker {
-					tg.timerSchedule(ctx)
-				}
+				tg.timerSchedule(ctx)
 				timer.Reset(10 * time.Millisecond)
 			}
 		}
@@ -214,19 +160,35 @@ func (tg *taskGroup) timerSchedule(ctx context.Context) {
 }
 
 func (tg *taskGroup) scheduleGroupTask(ctx context.Context, max int) {
-	if len(tg.groupTaskDic) == 0 {
+	if tg.workerCount >= tg.maxWorker {
 		return
 	}
 
 	delKeys := make([]string, 0)
 	for gkey, _ := range tg.groupTaskDic {
 		tasks := tg.groupTaskDic[gkey]
-		if len(tasks) >= max {
-			if atomic.LoadInt32(&tg.workerCount) == tg.maxWorker {
+
+		if len(tasks) < max {
+			continue
+		}
+
+		for {
+			if tg.workerCount >= tg.maxWorker {
 				goto CLEAN
 			}
-			tg.processing(ctx, tasks)
-			delKeys = append(delKeys, gkey)
+			if len(tasks) <= tg.batchSize {
+				tg.workerCount++
+				go tg.running(ctx, tasks)
+				delKeys = append(delKeys, gkey)
+				break
+			}
+
+			target := tasks[:tg.batchSize]
+			tasks = tasks[tg.batchSize:]
+			tg.groupTaskDic[gkey] = tasks
+
+			tg.workerCount++
+			go tg.running(ctx, target)
 		}
 	}
 CLEAN:
@@ -237,89 +199,27 @@ CLEAN:
 }
 
 func (tg *taskGroup) scheduleTask(ctx context.Context) {
-	if len(tg.tasks) == 0 {
-		return
-	}
-
-	index := 0
 	for {
-		if index >= len(tg.tasks) || atomic.LoadInt32(&tg.workerCount) == tg.maxWorker {
+		if tg.workerCount >= tg.maxWorker || len(tg.tasks) == 0 {
 			break
 		}
-		t := tg.tasks[index]
-		tg.processing(ctx, []Task{t})
-		index = index + 1
-	}
 
-	switch {
-	case index >= len(tg.tasks):
-		{
-			tg.tasks = []Task{}
+		t := tg.tasks[0]
+		tg.workerCount++
+		go tg.running(ctx, []Task{t})
+		if len(tg.tasks) == 1 {
+			tg.tasks = tg.tasks[:0]
+		} else {
+			tg.tasks = tg.tasks[1:]
 		}
-	case index == len(tg.tasks)-1:
-		{
-			tg.tasks = []Task{tg.tasks[index]}
-		}
-	default:
-		tg.tasks = tg.tasks[index:]
-	}
-}
-
-func (tg *taskGroup) processing(ctx context.Context, tasks []Task) {
-	tasklist := tasks
-	for {
-		if len(tasklist) <= tg.batchSize {
-			tg.running(ctx, tasklist)
-			return
-		}
-		target := tasklist[:tg.batchSize]
-		tasklist = tasklist[tg.batchSize:]
-		tg.running(ctx, target)
 	}
 }
 
 func (tg *taskGroup) running(ctx context.Context, tasks []Task) {
-	atomic.AddInt32(&tg.workerCount, 1)
-	go func() {
-		defer func() {
-			atomic.AddInt32(&tg.workerCount, -1)
-		}()
-
-		_, err := async.Safety(func() (interface{}, error) {
-
-			res, err := tg.method(tasks...)
-			if err != nil {
-				return nil, err
-			}
-
-			for i, _ := range tasks {
-				t := tasks[i]
-
-				mkey := ""
-				_, ok := t.(MergeTask)
-				if ok {
-					mkey = t.(MergeTask).MergeBy()
-				}
-
-				val, ok := res[t.UniqueId()]
-				if ok {
-					tg.resultQueue <- &result{
-						key:  t.UniqueId(),
-						mkey: mkey,
-						val:  val,
-					}
-				} else {
-					tg.resultQueue <- &result{
-						key:  t.UniqueId(),
-						mkey: mkey,
-						val:  nil,
-					}
-				}
-			}
-			return nil, nil
-		})
-		if err == nil {
-			return
+	_, err := async.Safety(func() (interface{}, error) {
+		res, err := tg.method(tasks...)
+		if err != nil {
+			return nil, err
 		}
 
 		for i, _ := range tasks {
@@ -331,11 +231,40 @@ func (tg *taskGroup) running(ctx context.Context, tasks []Task) {
 				mkey = t.(MergeTask).MergeBy()
 			}
 
-			tg.resultQueue <- &result{
-				key:  t.UniqueId(),
-				mkey: mkey,
-				err:  err,
+			val, ok := res[t.UniqueId()]
+			if ok {
+				tg.resultQueue <- &result{
+					key:  t.UniqueId(),
+					mkey: mkey,
+					val:  val,
+				}
+			} else {
+				tg.resultQueue <- &result{
+					key:  t.UniqueId(),
+					mkey: mkey,
+					val:  nil,
+				}
 			}
 		}
-	}()
+		return nil, nil
+	})
+	if err == nil {
+		return
+	}
+
+	for i, _ := range tasks {
+		t := tasks[i]
+
+		mkey := ""
+		_, ok := t.(MergeTask)
+		if ok {
+			mkey = t.(MergeTask).MergeBy()
+		}
+
+		tg.resultQueue <- &result{
+			key:  t.UniqueId(),
+			mkey: mkey,
+			err:  err,
+		}
+	}
 }
