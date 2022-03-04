@@ -172,19 +172,21 @@ func (tg *taskGroup) scheduleGroupTask(ctx context.Context, max int) {
 			continue
 		}
 
-		tasklist := tasks
 		for {
 			if tg.workerCount >= tg.maxWorker {
 				goto CLEAN
 			}
-			if len(tasklist) <= tg.batchSize {
+			if len(tasks) <= tg.batchSize {
 				tg.workerCount++
-				go tg.running(ctx, tasklist)
+				go tg.running(ctx, tasks)
 				delKeys = append(delKeys, gkey)
 				break
 			}
-			target := tasklist[:tg.batchSize]
-			tasklist = tasklist[tg.batchSize:]
+
+			target := tasks[:tg.batchSize]
+			tasks = tasks[tg.batchSize:]
+			tg.groupTaskDic[gkey] = tasks
+
 			tg.workerCount++
 			go tg.running(ctx, target)
 		}
