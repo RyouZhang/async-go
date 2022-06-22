@@ -11,6 +11,7 @@ import (
 type taskGroup struct {
 	name      string
 	batchSize int
+	timeRange int
 
 	requestQueue chan *request
 	resultQueue  chan *result
@@ -27,10 +28,11 @@ type taskGroup struct {
 	method func(...Task) (map[string]interface{}, error)
 }
 
-func newTaskGroup(name string, batchSize int, maxWorker int, method func(...Task) (map[string]interface{}, error)) *taskGroup {
+func newTaskGroup(name string, batchSize int, maxWorker int, timeRange int, method func(...Task) (map[string]interface{}, error)) *taskGroup {
 	tg := &taskGroup{
 		name:         name,
 		batchSize:    batchSize,
+		timeRange:    timeRange,
 		requestQueue: make(chan *request, 128),
 		resultQueue:  make(chan *result, 128),
 		workerCount:  0,
@@ -49,7 +51,7 @@ func newTaskGroup(name string, batchSize int, maxWorker int, method func(...Task
 
 func (tg *taskGroup) runloop() {
 	ctx := context.Background()
-	timer := time.NewTimer(10 * time.Millisecond)
+	timer := time.NewTimer(time.Duration(tg.timeRange) * time.Millisecond)
 	for {
 		select {
 		case req := <-tg.requestQueue:
