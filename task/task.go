@@ -42,10 +42,11 @@ type request struct {
 type Option struct {
 	maxWorker int
 	batchSize int
+	timeRange int //ms
 }
 
 func DefaultOption() *Option {
-	return &Option{maxWorker: 8, batchSize: 32}
+	return &Option{maxWorker: 8, batchSize: 32, timeRange: 10}
 }
 
 func (opt *Option) WithMaxWoker(max int) *Option {
@@ -58,13 +59,19 @@ func (opt *Option) WithBatchSize(batchSize int) *Option {
 	return opt
 }
 
+// ms
+func (opt *Option) WithTimeRange(timeRange int) *Option {
+	opt.timeRange = timeRange
+	return opt
+}
+
 func RegisterTaskGroup(taskGroup string, method func(...Task) (map[string]interface{}, error), opt *Option) {
 	taskGroupMux.Lock()
 	defer taskGroupMux.Unlock()
 	if opt == nil {
-		taskGroupDic[taskGroup] = newTaskGroup(taskGroup, 32, 8, method)
+		taskGroupDic[taskGroup] = newTaskGroup(taskGroup, 32, 8, 10, method)
 	} else {
-		taskGroupDic[taskGroup] = newTaskGroup(taskGroup, opt.batchSize, opt.maxWorker, method)
+		taskGroupDic[taskGroup] = newTaskGroup(taskGroup, opt.batchSize, opt.maxWorker, opt.timeRange, method)
 	}
 }
 
