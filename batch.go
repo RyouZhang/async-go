@@ -116,7 +116,7 @@ func runloop() {
 					keys = []interface{}{c.key}
 				}
 
-				for index, _ := range keys {
+				for index := range keys {
 					key := keys[index]
 					// cache provider
 					if g.cache != nil && c.forced == false {
@@ -138,7 +138,7 @@ func runloop() {
 						b := &batchCmd{group: g.name}
 						b.keys = make([]interface{}, len(g.keyDic))
 						index := 0
-						for k, _ := range g.keyDic {
+						for k := range g.keyDic {
 							b.keys[index] = k
 							index = index + 1
 						}
@@ -154,7 +154,7 @@ func runloop() {
 					for _, key := range b.keys {
 						target, ok := g.cmdDic[key]
 						if ok {
-							for index, _ := range target {
+							for index := range target {
 								c := target[index]
 								c.output(b.err)
 							}
@@ -174,7 +174,7 @@ func runloop() {
 						}
 						target, ok := g.cmdDic[key]
 						if ok {
-							for index, _ := range target {
+							for index := range target {
 								c := target[index]
 								c.output(res)
 							}
@@ -190,7 +190,7 @@ func runloop() {
 						b := &batchCmd{group: g.name}
 						b.keys = make([]interface{}, len(g.keyDic))
 						index := 0
-						for k, _ := range g.keyDic {
+						for k := range g.keyDic {
 							b.keys[index] = k
 							index = index + 1
 						}

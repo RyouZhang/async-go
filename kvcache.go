@@ -181,7 +181,7 @@ func (kv *KVData) MDel(keys []interface{}) {
 func (kv *KVData) Keys() []interface{} {
 	keys := make([]interface{}, len(kv.pairs))
 	index := 0
-	for key, _ := range kv.pairs {
+	for key := range kv.pairs {
 		keys[index] = key
 		index = index + 1
 	}
