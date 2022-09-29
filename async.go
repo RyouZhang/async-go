@@ -25,7 +25,7 @@ func Safety(method func() (interface{}, error)) (res interface{}, err error) {
 			if ok {
 				err = e.(error)
 			} else {
-				err = errors.New(fmt.Sprintf("%v", e))
+				err = fmt.Errorf("%v", e)
 			}
 			if panicHandler != nil {
 				panicHandler(err)
@@ -56,7 +56,7 @@ func Lambda(method func() (interface{}, error), timeout time.Duration) (interfac
 		defer close(output)
 		defer func() {
 			if e := recover(); e != nil {
-				err := errors.New(fmt.Sprintf("%s", e))
+				err := fmt.Errorf("%s", e)
 				if panicHandler != nil {
 					panicHandler(err)
 				}
@@ -265,7 +265,7 @@ func Foreach(objs []interface{}, method func(int) (interface{}, error), maxConcu
 	var wg sync.WaitGroup
 	workers := make(chan bool, maxConcurrent)
 	results := make([]interface{}, len(objs))
-	for index, _ := range objs {
+	for index := range objs {
 		workers <- true
 		wg.Add(1)
 		go func(i int, method func(int) (interface{}, error)) {
