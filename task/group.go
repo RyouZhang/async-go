@@ -145,7 +145,7 @@ func (tg *taskGroup) runloop() {
 		case <-timer.C:
 			{
 				tg.timerSchedule(ctx)
-				timer.Reset(10 * time.Millisecond)
+				timer.Reset(time.Duration(tg.timeRange) * time.Millisecond)
 			}
 		}
 	}
