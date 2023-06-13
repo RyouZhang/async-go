@@ -8,7 +8,7 @@ import (
 type request struct {
 	key      string
 	method   func() (interface{}, error)
-	callback chan interface{}
+	callback chan *reply
 }
 
 type reply struct {
