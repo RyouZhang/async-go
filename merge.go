@@ -18,7 +18,7 @@ type reply struct {
 }
 
 type Merge struct {
-	callbackDic map[string][]chan interface{}
+	callbackDic map[string][]chan *reply
 	inputQueue  chan *request
 	outputQueue chan *reply
 	shutdown    chan bool
@@ -29,7 +29,7 @@ type Merge struct {
 
 func NewMerge() *Merge {
 	m := &Merge{
-		callbackDic: make(map[string][]chan interface{}),
+		callbackDic: make(map[string][]chan *reply),
 		inputQueue:  make(chan *request, 16),
 		outputQueue: make(chan *reply, 4),
 		shutdown:    make(chan bool),
@@ -62,7 +62,7 @@ func (m *Merge) runloop() {
 				if ok {
 					m.callbackDic[req.key] = append(target, req.callback)
 				} else {
-					target = make([]chan interface{}, 1)
+					target = make([]chan *reply, 1)
 					target[0] = req.callback
 					m.callbackDic[req.key] = target
 
