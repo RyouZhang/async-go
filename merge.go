@@ -93,7 +93,7 @@ func (m *Merge) Exec(key string, method func() (interface{}, error)) (interface{
 	m.wg.Add(1)
 	defer m.wg.Done()
 
-	callback := make(chan interface{}, 1)
+	callback := make(chan *reply, 1)
 	m.inputQueue <- &request{key: key, method: method, callback: callback}
 
 	res := <-callback
