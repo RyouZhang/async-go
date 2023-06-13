@@ -14,6 +14,7 @@ type request struct {
 type reply struct {
 	key    string
 	result interface{}
+	err    error
 }
 
 type Merge struct {
@@ -50,7 +51,7 @@ func (m *Merge) runloop() {
 				target, ok := m.callbackDic[rep.key]
 				if ok {
 					for _, callback := range target {
-						callback <- rep.result
+						callback <- rep
 					}
 					delete(m.callbackDic, rep.key)
 				}
@@ -67,11 +68,7 @@ func (m *Merge) runloop() {
 
 					go func(key string, method func() (interface{}, error)) {
 						res, err := Lambda(method, 0)
-						if err != nil {
-							m.outputQueue <- &reply{key: key, result: err}
-						} else {
-							m.outputQueue <- &reply{key: key, result: res}
-						}
+						m.outputQueue <- &reply{key: key, result: res, err: err}
 					}(req.key, req.method)
 				}
 			}
@@ -101,14 +98,5 @@ func (m *Merge) Exec(key string, method func() (interface{}, error)) (interface{
 
 	res := <-callback
 	close(callback)
-	switch res.(type) {
-	case error:
-		{
-			return nil, res.(error)
-		}
-	default:
-		{
-			return res, nil
-		}
-	}
+	return res.result, res.err
 }
