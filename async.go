@@ -50,8 +50,13 @@ func Retry(method func() (interface{}, error), maxCount int, interval time.Durat
 	}
 }
 
+type result struct {
+	val interface{}
+	err error
+}
+
 func Lambda(method func() (interface{}, error), timeout time.Duration) (interface{}, error) {
-	output := make(chan interface{}, 1)
+	output := make(chan *result, 1)
 	go func() {
 		defer close(output)
 		defer func() {
@@ -64,11 +69,7 @@ func Lambda(method func() (interface{}, error), timeout time.Duration) (interfac
 			}
 		}()
 		res, err := method()
-		if err != nil {
-			output <- err
-		} else {
-			output <- res
-		}
+		output <- &result{val: res, err: err}
 	}()
 	if timeout > 0 {
 		timer := time.NewTimer(timeout)
@@ -76,16 +77,7 @@ func Lambda(method func() (interface{}, error), timeout time.Duration) (interfac
 		select {
 		case res := <-output:
 			{
-				switch err := res.(type) {
-				case error:
-					{
-						return nil, err
-					}
-				default:
-					{
-						return res, nil
-					}
-				}
+				return res.val, res.err
 			}
 		case <-timer.C:
 			{
@@ -94,16 +86,7 @@ func Lambda(method func() (interface{}, error), timeout time.Duration) (interfac
 		}
 	} else {
 		res := <-output
-		switch err := res.(type) {
-		case error:
-			{
-				return nil, err
-			}
-		default:
-			{
-				return res, nil
-			}
-		}
+		return res.val, res.err
 	}
 }
 
