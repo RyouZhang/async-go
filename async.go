@@ -65,7 +65,7 @@ func Lambda(method func() (interface{}, error), timeout time.Duration) (interfac
 				if panicHandler != nil {
 					panicHandler(err)
 				}
-				output <- err
+				output <- &result{err: err}
 			}
 		}()
 		res, err := method()
