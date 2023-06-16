@@ -67,7 +67,7 @@ func (m *Merge) runloop() {
 					m.callbackDic[req.key] = target
 
 					go func(key string, method func() (interface{}, error)) {
-						res, err := Safety(method)
+						res, err := Lambda(method, 0)
 						m.outputQueue <- &reply{key: key, result: res, err: err}
 					}(req.key, req.method)
 				}
