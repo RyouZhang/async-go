@@ -32,7 +32,8 @@ func Safety(method func() (interface{}, error)) (res interface{}, err error) {
 			}
 		}
 	}()
-	return method()
+	res, err = method()
+	return
 }
 
 func Retry(method func() (interface{}, error), maxCount int, interval time.Duration) (interface{}, error) {
