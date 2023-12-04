@@ -30,8 +30,8 @@ type Merge struct {
 func NewMerge() *Merge {
 	m := &Merge{
 		callbackDic: make(map[string][]chan *reply),
-		inputQueue:  make(chan *request, 16),
-		outputQueue: make(chan *reply, 4),
+		inputQueue:  make(chan *request, 128),
+		outputQueue: make(chan *reply, 16),
 		shutdown:    make(chan bool),
 		isDestory:   false,
 	}
