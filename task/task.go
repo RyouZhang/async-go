@@ -75,6 +75,22 @@ func RegisterTaskGroup(taskGroup string, method func(...Task) (map[string]interf
 	}
 }
 
+func UpdateTaskGroup(taskGroup string, opt *Option) error {
+	taskGroupMux.Lock()
+	defer taskGroupMux.Unlock()
+	if opt == nil {
+		return nil
+	}
+	t, ok := taskGroupDic[taskGroup]
+	if false == ok {
+		return fmt.Errorf("invalid task group:%s", taskGroup)
+	}
+	t.batchSize = opt.batchSize
+	t.maxWorker = opt.maxWorker
+	t.timeRange = opt.timeRange
+	return nil
+}
+
 func Exec(ctx context.Context, taskGroup string, in Task) (interface{}, error) {
 	taskGroupMux.RLock()
 	tg, ok := taskGroupDic[taskGroup]
