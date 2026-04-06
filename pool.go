@@ -11,7 +11,7 @@ var (
 )
 
 type pool struct {
-	queue chan bool
+	queue chan struct{}
 }
 
 func init() {
@@ -26,7 +26,7 @@ func RegisterPool(name string, maxWorkers int) error {
 		return fmt.Errorf("duplicate pool name:%s", name)
 	}
 	poolDic[name] = &pool{
-		queue: make(chan bool, maxWorkers),
+		queue: make(chan struct{}, maxWorkers),
 	}
 	return nil
 }
@@ -42,7 +42,7 @@ func Pool(poolName string, count int, method func(int) (any, error)) []any {
 	var wg sync.WaitGroup
 	results := make([]any, count)
 	for index := 0; index < count; index++ {
-		p.queue <- true
+		p.queue <- struct{}{}
 		wg.Add(1)
 		go func(i int, method func(int) (any, error)) {
 			defer func() {

@@ -7,13 +7,13 @@ import (
 
 type request struct {
 	key      string
-	method   func() (interface{}, error)
+	method   func() (any, error)
 	callback chan *reply
 }
 
 type reply struct {
 	key    string
-	result interface{}
+	result any
 	err    error
 }
 
@@ -21,7 +21,7 @@ type Merge struct {
 	callbackDic map[string][]chan *reply
 	inputQueue  chan *request
 	outputQueue chan *reply
-	shutdown    chan bool
+	shutdown    chan struct{}
 	wg          sync.WaitGroup
 	isDestory   bool
 	destoryOnce sync.Once
@@ -32,7 +32,7 @@ func NewMerge() *Merge {
 		callbackDic: make(map[string][]chan *reply),
 		inputQueue:  make(chan *request, 128),
 		outputQueue: make(chan *reply, 16),
-		shutdown:    make(chan bool),
+		shutdown:    make(chan struct{}),
 		isDestory:   false,
 	}
 	go m.runloop()
@@ -66,7 +66,7 @@ func (m *Merge) runloop() {
 					target[0] = req.callback
 					m.callbackDic[req.key] = target
 
-					go func(key string, method func() (interface{}, error)) {
+					go func(key string, method func() (any, error)) {
 						res, err := Safety(method)
 						m.outputQueue <- &reply{key: key, result: res, err: err}
 					}(req.key, req.method)
@@ -86,7 +86,7 @@ func (m *Merge) Destory() {
 	close(m.outputQueue)
 }
 
-func (m *Merge) Exec(key string, method func() (interface{}, error)) (interface{}, error) {
+func (m *Merge) Exec(key string, method func() (any, error)) (any, error) {
 	if m.isDestory {
 		return nil, errors.New("Merge Destoried")
 	}

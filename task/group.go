@@ -25,10 +25,10 @@ type taskGroup struct {
 
 	tasks []Task
 
-	method func(...Task) (map[string]interface{}, error)
+	method func(...Task) (map[string]any, error)
 }
 
-func newTaskGroup(name string, batchSize int, maxWorker int, timeRange int, method func(...Task) (map[string]interface{}, error)) *taskGroup {
+func newTaskGroup(name string, batchSize int, maxWorker int, timeRange int, method func(...Task) (map[string]any, error)) *taskGroup {
 	tg := &taskGroup{
 		name:         name,
 		batchSize:    batchSize,
@@ -218,7 +218,7 @@ func (tg *taskGroup) scheduleTask(ctx context.Context) {
 }
 
 func (tg *taskGroup) running(ctx context.Context, tasks []Task) {
-	_, err := async.Safety(func() (interface{}, error) {
+	_, err := async.Safety(func() (any, error) {
 		res, err := tg.method(tasks...)
 		if err != nil {
 			return nil, err

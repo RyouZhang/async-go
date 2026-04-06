@@ -8,19 +8,19 @@ import (
 )
 
 type operation struct {
-	method   func(*KVData) (interface{}, error)
-	callback chan interface{}
+	method   func(*KVData) (any, error)
+	callback chan any
 }
 
 type keyInfo struct {
-	key    interface{}
+	key    any
 	expire int64
 }
 
 type KVData struct {
-	pairs   map[interface{}]interface{}
+	pairs   map[any]any
 	keys    *list.List
-	index   map[interface{}]*list.Element
+	index   map[any]*list.Element
 	lru     bool
 	ttl     int64 //second
 	maxSize int
@@ -28,9 +28,9 @@ type KVData struct {
 
 func newKVData() *KVData {
 	return &KVData{
-		pairs:   make(map[interface{}]interface{}),
+		pairs:   make(map[any]any),
 		keys:    list.New(),
-		index:   make(map[interface{}]*list.Element),
+		index:   make(map[any]*list.Element),
 		lru:     false,
 		ttl:     0,
 		maxSize: 0,
@@ -52,7 +52,7 @@ func (kv *KVData) drain() {
 	}
 }
 
-func (kv *KVData) updateLRU(keys []interface{}) {
+func (kv *KVData) updateLRU(keys []any) {
 	if false == kv.lru {
 		return
 	}
@@ -87,7 +87,7 @@ func (kv *KVData) updateTTL() {
 	}
 }
 
-func (kv *KVData) Set(key interface{}, value interface{}) {
+func (kv *KVData) Set(key any, value any) {
 	defer kv.drain()
 	kv.pairs[key] = value
 
@@ -103,7 +103,7 @@ func (kv *KVData) Set(key interface{}, value interface{}) {
 	}
 }
 
-func (kv *KVData) MSet(keys []interface{}, values []interface{}) {
+func (kv *KVData) MSet(keys []any, values []any) {
 	defer kv.drain()
 	for i, key := range keys {
 		kv.pairs[key] = values[i]
@@ -121,7 +121,7 @@ func (kv *KVData) MSet(keys []interface{}, values []interface{}) {
 	}
 }
 
-func (kv *KVData) Merge(pairs map[interface{}]interface{}) {
+func (kv *KVData) Merge(pairs map[any]any) {
 	defer kv.drain()
 	for key, value := range pairs {
 		kv.pairs[key] = value
@@ -139,8 +139,8 @@ func (kv *KVData) Merge(pairs map[interface{}]interface{}) {
 	}
 }
 
-func (kv *KVData) Get(key interface{}) (interface{}, error) {
-	defer kv.updateLRU([]interface{}{key})
+func (kv *KVData) Get(key any) (any, error) {
+	defer kv.updateLRU([]any{key})
 	value, ok := kv.pairs[key]
 	if ok {
 		return value, nil
@@ -149,9 +149,9 @@ func (kv *KVData) Get(key interface{}) (interface{}, error) {
 	}
 }
 
-func (kv *KVData) MGet(keys []interface{}) []interface{} {
+func (kv *KVData) MGet(keys []any) []any {
 	defer kv.updateLRU(keys)
-	values := make([]interface{}, len(keys))
+	values := make([]any, len(keys))
 	for i, key := range keys {
 		value, ok := kv.pairs[key]
 		if ok {
@@ -163,7 +163,7 @@ func (kv *KVData) MGet(keys []interface{}) []interface{} {
 	return values
 }
 
-func (kv *KVData) Del(key interface{}) {
+func (kv *KVData) Del(key any) {
 	delete(kv.pairs, key)
 	ele, ok := kv.index[key]
 	if ok {
@@ -172,14 +172,14 @@ func (kv *KVData) Del(key interface{}) {
 	}
 }
 
-func (kv *KVData) MDel(keys []interface{}) {
+func (kv *KVData) MDel(keys []any) {
 	for _, key := range keys {
 		kv.Del(key)
 	}
 }
 
-func (kv *KVData) Keys() []interface{} {
-	keys := make([]interface{}, len(kv.pairs))
+func (kv *KVData) Keys() []any {
+	keys := make([]any, len(kv.pairs))
 	index := 0
 	for key := range kv.pairs {
 		keys[index] = key
@@ -204,7 +204,7 @@ func (kv *KVData) Clean() {
 type KVCache struct {
 	data      *KVData
 	queue     chan operation
-	shutdown  chan bool
+	shutdown  chan struct{}
 	desLock   sync.RWMutex
 	isDestory bool
 }
@@ -213,7 +213,7 @@ func NewKVCache() *KVCache {
 	kv := &KVCache{
 		data:      newKVData(),
 		queue:     make(chan operation, 16),
-		shutdown:  make(chan bool),
+		shutdown:  make(chan struct{}),
 		isDestory: false,
 	}
 	go kv.runloop()
@@ -273,13 +273,13 @@ End:
 	close(kv.queue)
 }
 
-func (kv *KVCache) Commit(method func(*KVData) (interface{}, error)) (interface{}, error) {
+func (kv *KVCache) Commit(method func(*KVData) (any, error)) (any, error) {
 	kv.desLock.RLock()
 	if kv.isDestory {
 		kv.desLock.RUnlock()
 		return nil, errors.New("Invalid KVCache")
 	}
-	output := make(chan interface{}, 1)
+	output := make(chan any, 1)
 	defer close(output)
 	kv.queue <- operation{method: method, callback: output}
 	kv.desLock.RUnlock()
@@ -308,6 +308,5 @@ func (kv *KVCache) Destory() {
 		return
 	}
 	kv.isDestory = true
-	kv.shutdown <- true
 	close(kv.shutdown)
 }

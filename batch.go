@@ -15,8 +15,8 @@ var (
 )
 
 type CacheProvider interface {
-	Put(string, interface{}, interface{}) error
-	Get(string, interface{}) (interface{}, error)
+	Put(string, any, any) error
+	Get(string, any) (any, error)
 }
 
 func init() {
@@ -28,21 +28,21 @@ func init() {
 type group struct {
 	name      string
 	batchSize int
-	method    func(...interface{}) (map[interface{}]interface{}, error)
-	cmdDic    map[interface{}][]*cmd
-	keyDic    map[interface{}]bool
+	method    func(...any) (map[any]any, error)
+	cmdDic    map[any][]*cmd
+	keyDic    map[any]bool
 	cache     CacheProvider
 }
 
 type cmd struct {
 	group    string
-	key      interface{}
+	key      any
 	count    int
-	callback chan interface{}
+	callback chan any
 	forced   bool
 }
 
-func (c *cmd) output(res interface{}) {
+func (c *cmd) output(res any) {
 	c.callback <- res
 	c.count--
 	if c.count == 0 {
@@ -52,15 +52,15 @@ func (c *cmd) output(res interface{}) {
 
 type batchCmd struct {
 	group  string
-	keys   []interface{}
+	keys   []any
 	err    error
-	result map[interface{}]interface{}
+	result map[any]any
 }
 
 func RegisterGroup(
 	name string,
 	batchSize int,
-	method func(...interface{}) (map[interface{}]interface{}, error),
+	method func(...any) (map[any]any, error),
 	cache CacheProvider) error {
 
 	_, ok := groupDic[name]
@@ -72,8 +72,8 @@ func RegisterGroup(
 		name:      name,
 		batchSize: batchSize,
 		method:    method,
-		cmdDic:    make(map[interface{}][]*cmd),
-		keyDic:    make(map[interface{}]bool),
+		cmdDic:    make(map[any][]*cmd),
+		keyDic:    make(map[any]bool),
 		cache:     cache,
 	}
 	one.Do(func() {
@@ -82,14 +82,14 @@ func RegisterGroup(
 	return nil
 }
 
-func doing(ctx context.Context, b *batchCmd, method func(...interface{}) (map[interface{}]interface{}, error)) {
-	res, err := Safety(func() (interface{}, error) {
+func doing(ctx context.Context, b *batchCmd, method func(...any) (map[any]any, error)) {
+	res, err := Safety(func() (any, error) {
 		return method(b.keys...)
 	})
 	if err != nil {
 		b.err = err
 	} else {
-		b.result = res.(map[interface{}]interface{})
+		b.result = res.(map[any]any)
 	}
 	output <- b
 }
@@ -109,11 +109,11 @@ func runloop() {
 					}
 					continue
 				}
-				var keys []interface{}
+				var keys []any
 				if c.count > 1 {
-					keys = c.key.([]interface{})
+					keys = c.key.([]any)
 				} else {
-					keys = []interface{}{c.key}
+					keys = []any{c.key}
 				}
 
 				for index := range keys {
@@ -136,13 +136,13 @@ func runloop() {
 
 					if len(g.keyDic) >= g.batchSize {
 						b := &batchCmd{group: g.name}
-						b.keys = make([]interface{}, len(g.keyDic))
+						b.keys = make([]any, len(g.keyDic))
 						index := 0
 						for k := range g.keyDic {
 							b.keys[index] = k
 							index = index + 1
 						}
-						g.keyDic = make(map[interface{}]bool)
+						g.keyDic = make(map[any]bool)
 						go doing(ctx, b, g.method)
 					}
 				}
@@ -188,13 +188,13 @@ func runloop() {
 				for _, g := range groupDic {
 					if len(g.keyDic) > 0 {
 						b := &batchCmd{group: g.name}
-						b.keys = make([]interface{}, len(g.keyDic))
+						b.keys = make([]any, len(g.keyDic))
 						index := 0
 						for k := range g.keyDic {
 							b.keys[index] = k
 							index = index + 1
 						}
-						g.keyDic = make(map[interface{}]bool)
+						g.keyDic = make(map[any]bool)
 						go doing(ctx, b, g.method)
 					}
 				}
@@ -204,20 +204,20 @@ func runloop() {
 	}
 }
 
-func Get(group string, key interface{}) (interface{}, error) {
+func Get(group string, key any) (any, error) {
 	return get(group, false, key)
 }
 
-func ForceGet(group string, key interface{}) (interface{}, error) {
+func ForceGet(group string, key any) (any, error) {
 	return get(group, true, key)
 }
 
-func get(group string, forced bool, key interface{}) (interface{}, error) {
+func get(group string, forced bool, key any) (any, error) {
 	c := &cmd{
 		group:    group,
 		key:      key,
 		count:    1,
-		callback: make(chan interface{}, 1),
+		callback: make(chan any, 1),
 		forced:   forced,
 	}
 	input <- c
@@ -230,24 +230,24 @@ func get(group string, forced bool, key interface{}) (interface{}, error) {
 	}
 }
 
-func MGet(group string, keys ...interface{}) []interface{} {
+func MGet(group string, keys ...any) []any {
 	return mget(group, false, keys...)
 }
 
-func ForceMGet(group string, keys ...interface{}) []interface{} {
+func ForceMGet(group string, keys ...any) []any {
 	return mget(group, true, keys...)
 }
 
-func mget(group string, forced bool, keys ...interface{}) []interface{} {
+func mget(group string, forced bool, keys ...any) []any {
 	c := &cmd{
 		group:    group,
 		key:      keys,
 		count:    len(keys),
-		callback: make(chan interface{}, len(keys)),
+		callback: make(chan any, len(keys)),
 		forced:   forced,
 	}
 	input <- c
-	results := make([]interface{}, 0)
+	results := make([]any, 0)
 	for result := range c.callback {
 		results = append(results, result)
 	}

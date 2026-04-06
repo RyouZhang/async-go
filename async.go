@@ -9,16 +9,16 @@ import (
 
 const Unlimit = 0
 
-type Method func(args ...interface{}) (interface{}, error)
-type LambdaMethod func() (interface{}, error)
+type Method func(args ...any) (any, error)
+type LambdaMethod func() (any, error)
 
-var panicHandler func(interface{})
+var panicHandler func(any)
 
-func SetPanicHandler(hanlder func(interface{})) {
+func SetPanicHandler(hanlder func(any)) {
 	panicHandler = hanlder
 }
 
-func Safety(method func() (interface{}, error)) (res interface{}, err error) {
+func Safety(method func() (any, error)) (res any, err error) {
 	defer func() {
 		if e := recover(); e != nil {
 			_, ok := e.(error)
@@ -36,7 +36,7 @@ func Safety(method func() (interface{}, error)) (res interface{}, err error) {
 	return
 }
 
-func Retry(method func() (interface{}, error), maxCount int, interval time.Duration) (interface{}, error) {
+func Retry(method func() (any, error), maxCount int, interval time.Duration) (any, error) {
 	count := 0
 	for {
 		res, err := Lambda(method, Unlimit)
@@ -52,11 +52,11 @@ func Retry(method func() (interface{}, error), maxCount int, interval time.Durat
 }
 
 type result struct {
-	val interface{}
+	val any
 	err error
 }
 
-func Lambda(method func() (interface{}, error), timeout time.Duration) (interface{}, error) {
+func Lambda(method func() (any, error), timeout time.Duration) (any, error) {
 	output := make(chan *result, 1)
 	go func() {
 		defer close(output)
@@ -91,15 +91,15 @@ func Lambda(method func() (interface{}, error), timeout time.Duration) (interfac
 	}
 }
 
-func Call(m Method, timeout time.Duration, args ...interface{}) (interface{}, error) {
-	return Lambda(func() (interface{}, error) {
+func Call(m Method, timeout time.Duration, args ...any) (any, error) {
+	return Lambda(func() (any, error) {
 		return m(args...)
 	}, timeout)
 }
 
-func All(methods []LambdaMethod, timeout time.Duration) []interface{} {
+func All(methods []LambdaMethod, timeout time.Duration) []any {
 	var wg sync.WaitGroup
-	result := make([]interface{}, len(methods))
+	result := make([]any, len(methods))
 	for i, m := range methods {
 		wg.Add(1)
 		go func(index int, method LambdaMethod) {
@@ -116,8 +116,8 @@ func All(methods []LambdaMethod, timeout time.Duration) []interface{} {
 	return result
 }
 
-func Serise(methods []LambdaMethod, timeout time.Duration) []interface{} {
-	result := make([]interface{}, 0)
+func Serise(methods []LambdaMethod, timeout time.Duration) []any {
+	result := make([]any, 0)
 	for _, m := range methods {
 		res, err := Lambda(m, timeout)
 		if err != nil {
@@ -130,9 +130,9 @@ func Serise(methods []LambdaMethod, timeout time.Duration) []interface{} {
 	return result
 }
 
-func Flow(enter Method, args []interface{}, methods []Method, timeout time.Duration) (interface{}, error) {
+func Flow(enter Method, args []any, methods []Method, timeout time.Duration) (any, error) {
 	var (
-		res interface{}
+		res any
 		err error
 	)
 	res, err = Call(enter, timeout, args...)
@@ -148,8 +148,8 @@ func Flow(enter Method, args []interface{}, methods []Method, timeout time.Durat
 	return res, nil
 }
 
-func Any(methods []LambdaMethod, timeout time.Duration) ([]interface{}, error) {
-	resChan := make(chan []interface{}, 1)
+func Any(methods []LambdaMethod, timeout time.Duration) ([]any, error) {
+	resChan := make(chan []any, 1)
 	errChan := make(chan error, len(methods))
 	go func() {
 		defer func() {
@@ -157,7 +157,7 @@ func Any(methods []LambdaMethod, timeout time.Duration) ([]interface{}, error) {
 			close(errChan)
 		}()
 		var wg sync.WaitGroup
-		result := make([]interface{}, len(methods))
+		result := make([]any, len(methods))
 		for i, m := range methods {
 			wg.Add(1)
 			go func(index int, method LambdaMethod) {
@@ -181,8 +181,8 @@ func Any(methods []LambdaMethod, timeout time.Duration) ([]interface{}, error) {
 	}
 }
 
-func AnyOne(methods []LambdaMethod, timeout time.Duration) (interface{}, []error) {
-	resChan := make(chan interface{}, len(methods))
+func AnyOne(methods []LambdaMethod, timeout time.Duration) (any, []error) {
+	resChan := make(chan any, len(methods))
 	errChan := make(chan []error, 1)
 	go func() {
 		defer func() {
@@ -214,15 +214,15 @@ func AnyOne(methods []LambdaMethod, timeout time.Duration) (interface{}, []error
 	}
 }
 
-func Parallel(methods []LambdaMethod, maxCount int) []interface{} {
+func Parallel(methods []LambdaMethod, maxCount int) []any {
 	if maxCount == Unlimit {
 		maxCount = 64
 	}
 	var wg sync.WaitGroup
-	workers := make(chan bool, maxCount)
-	results := make([]interface{}, len(methods))
+	workers := make(chan struct{}, maxCount)
+	results := make([]any, len(methods))
 	for index, method := range methods {
-		workers <- true
+		workers <- struct{}{}
 		wg.Add(1)
 		go func(i int, m LambdaMethod) {
 			defer func() {
@@ -242,22 +242,22 @@ func Parallel(methods []LambdaMethod, maxCount int) []interface{} {
 	return results
 }
 
-func Foreach(objs []interface{}, method func(int) (interface{}, error), maxConcurrent int) []interface{} {
+func Foreach(objs []any, method func(int) (any, error), maxConcurrent int) []any {
 	if maxConcurrent == Unlimit {
 		maxConcurrent = 64
 	}
 	var wg sync.WaitGroup
-	workers := make(chan bool, maxConcurrent)
-	results := make([]interface{}, len(objs))
+	workers := make(chan struct{}, maxConcurrent)
+	results := make([]any, len(objs))
 	for index := range objs {
-		workers <- true
+		workers <- struct{}{}
 		wg.Add(1)
-		go func(i int, method func(int) (interface{}, error)) {
+		go func(i int, method func(int) (any, error)) {
 			defer func() {
 				<-workers
 				wg.Done()
 			}()
-			res, err := Safety(func() (interface{}, error) {
+			res, err := Safety(func() (any, error) {
 				return method(i)
 			})
 			if err != nil {
@@ -272,22 +272,22 @@ func Foreach(objs []interface{}, method func(int) (interface{}, error), maxConcu
 	return results
 }
 
-func For(count int, method func(int) (interface{}, error), maxConcurrent int) []interface{} {
+func For(count int, method func(int) (any, error), maxConcurrent int) []any {
 	if maxConcurrent == Unlimit {
 		maxConcurrent = 64
 	}
 	var wg sync.WaitGroup
-	workers := make(chan bool, maxConcurrent)
-	results := make([]interface{}, count)
+	workers := make(chan struct{}, maxConcurrent)
+	results := make([]any, count)
 	for index := 0; index < count; index++ {
-		workers <- true
+		workers <- struct{}{}
 		wg.Add(1)
-		go func(i int, method func(int) (interface{}, error)) {
+		go func(i int, method func(int) (any, error)) {
 			defer func() {
 				<-workers
 				wg.Done()
 			}()
-			res, err := Safety(func() (interface{}, error) {
+			res, err := Safety(func() (any, error) {
 				return method(i)
 			})
 			if err != nil {

@@ -28,7 +28,7 @@ type GroupTask interface {
 type result struct {
 	key  string
 	mkey string
-	val  interface{}
+	val  any
 	err  error
 }
 
@@ -65,7 +65,7 @@ func (opt *Option) WithTimeRange(timeRange int) *Option {
 	return opt
 }
 
-func RegisterTaskGroup(taskGroup string, method func(...Task) (map[string]interface{}, error), opt *Option) {
+func RegisterTaskGroup(taskGroup string, method func(...Task) (map[string]any, error), opt *Option) {
 	taskGroupMux.Lock()
 	defer taskGroupMux.Unlock()
 	if opt == nil {
@@ -91,7 +91,7 @@ func UpdateTaskGroup(taskGroup string, opt *Option) error {
 	return nil
 }
 
-func Exec(ctx context.Context, taskGroup string, in Task) (interface{}, error) {
+func Exec(ctx context.Context, taskGroup string, in Task) (any, error) {
 	taskGroupMux.RLock()
 	tg, ok := taskGroupDic[taskGroup]
 	taskGroupMux.RUnlock()
@@ -114,7 +114,7 @@ func Exec(ctx context.Context, taskGroup string, in Task) (interface{}, error) {
 	return res.val, nil
 }
 
-func BatchExec(ctx context.Context, taskGroup string, in ...Task) map[string]interface{} {
+func BatchExec(ctx context.Context, taskGroup string, in ...Task) map[string]any {
 	taskGroupMux.RLock()
 	tg, ok := taskGroupDic[taskGroup]
 	taskGroupMux.RUnlock()
@@ -132,7 +132,7 @@ func BatchExec(ctx context.Context, taskGroup string, in ...Task) map[string]int
 	}
 	tg.requestQueue <- req
 
-	result := make(map[string]interface{})
+	result := make(map[string]any)
 
 	for res := range req.callback {
 		if res.err != nil {
