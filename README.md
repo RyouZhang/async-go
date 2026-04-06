@@ -56,8 +56,8 @@ methods := []async.LambdaMethod{taskA, taskB, taskC}
 // All: run all concurrently, wait for all to complete
 results := async.All(methods, 10*time.Second)
 
-// Serise: run sequentially, stop on first error
-results := async.Serise(methods, 10*time.Second)
+// Series: run sequentially, stop on first error
+results := async.Series(methods, 10*time.Second)
 
 // Any: run all concurrently, fail fast on first error
 results, err := async.Any(methods, 10*time.Second)
@@ -134,7 +134,7 @@ task.RegisterTaskGroup("fetch-users", func(tasks ...task.Task) (map[string]any, 
         results[t.UniqueId()] = fetchUser(t)
     }
     return results, nil
-}, task.DefaultOption().WithBatchSize(64).WithMaxWoker(4).WithTimeRange(20))
+}, task.DefaultOption().WithBatchSize(64).WithMaxWorker(4).WithTimeRange(20))
 
 // Execute a single task
 res, err := task.Exec(ctx, "fetch-users", myTask)
@@ -148,14 +148,14 @@ results := task.BatchExec(ctx, "fetch-users", task1, task2, task3)
 ```go
 opt := task.DefaultOption()       // batchSize=32, maxWorker=8, timeRange=10ms
 opt.WithBatchSize(64)             // Max tasks per batch
-opt.WithMaxWoker(16)              // Max concurrent workers
+opt.WithMaxWorker(16)              // Max concurrent workers
 opt.WithTimeRange(50)             // Timer interval in milliseconds for flushing pending tasks
 ```
 
 ### Update at Runtime
 
 ```go
-task.UpdateTaskGroup("fetch-users", task.DefaultOption().WithMaxWoker(16))
+task.UpdateTaskGroup("fetch-users", task.DefaultOption().WithMaxWorker(16))
 ```
 
 ## Request Merging (`merge.go`)
@@ -164,7 +164,7 @@ Deduplicate concurrent requests by key — only one execution per unique key, wi
 
 ```go
 m := async.NewMerge()
-defer m.Destory()
+defer m.Destroy()
 
 // Concurrent calls with the same key will share one execution
 res, err := m.Exec("user:123", func() (any, error) {
@@ -178,7 +178,7 @@ A goroutine-safe in-memory key-value cache with optional TTL, LRU eviction, and 
 
 ```go
 cache := async.NewKVCache().TTL(300).LRU(true).MaxSize(1000)
-defer cache.Destory()
+defer cache.Destroy()
 
 // Write
 cache.Commit(func(kv *async.KVData) (any, error) {

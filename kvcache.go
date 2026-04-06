@@ -202,19 +202,19 @@ func (kv *KVData) Clean() {
 }
 
 type KVCache struct {
-	data      *KVData
-	queue     chan operation
-	shutdown  chan struct{}
-	desLock   sync.RWMutex
-	isDestory bool
+	data        *KVData
+	queue       chan operation
+	shutdown    chan struct{}
+	desLock     sync.RWMutex
+	isDestroyed bool
 }
 
 func NewKVCache() *KVCache {
 	kv := &KVCache{
-		data:      newKVData(),
-		queue:     make(chan operation, 16),
-		shutdown:  make(chan struct{}),
-		isDestory: false,
+		data:        newKVData(),
+		queue:       make(chan operation, 16),
+		shutdown:    make(chan struct{}),
+		isDestroyed: false,
 	}
 	go kv.runloop()
 	return kv
@@ -275,7 +275,7 @@ End:
 
 func (kv *KVCache) Commit(method func(*KVData) (any, error)) (any, error) {
 	kv.desLock.RLock()
-	if kv.isDestory {
+	if kv.isDestroyed {
 		kv.desLock.RUnlock()
 		return nil, errors.New("Invalid KVCache")
 	}
@@ -301,12 +301,12 @@ func (kv *KVCache) Commit(method func(*KVData) (any, error)) (any, error) {
 	}
 }
 
-func (kv *KVCache) Destory() {
+func (kv *KVCache) Destroy() {
 	kv.desLock.Lock()
 	defer kv.desLock.Unlock()
-	if kv.isDestory {
+	if kv.isDestroyed {
 		return
 	}
-	kv.isDestory = true
+	kv.isDestroyed = true
 	close(kv.shutdown)
 }

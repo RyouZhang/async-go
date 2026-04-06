@@ -14,8 +14,8 @@ type LambdaMethod func() (any, error)
 
 var panicHandler func(any)
 
-func SetPanicHandler(hanlder func(any)) {
-	panicHandler = hanlder
+func SetPanicHandler(handler func(any)) {
+	panicHandler = handler
 }
 
 func Safety(method func() (any, error)) (res any, err error) {
@@ -116,7 +116,7 @@ func All(methods []LambdaMethod, timeout time.Duration) []any {
 	return result
 }
 
-func Serise(methods []LambdaMethod, timeout time.Duration) []any {
+func Series(methods []LambdaMethod, timeout time.Duration) []any {
 	result := make([]any, 0)
 	for _, m := range methods {
 		res, err := Lambda(m, timeout)

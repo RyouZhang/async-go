@@ -23,8 +23,8 @@ type Merge struct {
 	outputQueue chan *reply
 	shutdown    chan struct{}
 	wg          sync.WaitGroup
-	isDestory   bool
-	destoryOnce sync.Once
+	isDestroyed bool
+	destroyOnce sync.Once
 }
 
 func NewMerge() *Merge {
@@ -33,7 +33,7 @@ func NewMerge() *Merge {
 		inputQueue:  make(chan *request, 128),
 		outputQueue: make(chan *reply, 16),
 		shutdown:    make(chan struct{}),
-		isDestory:   false,
+		isDestroyed: false,
 	}
 	go m.runloop()
 	return m
@@ -76,9 +76,9 @@ func (m *Merge) runloop() {
 	}
 }
 
-func (m *Merge) Destory() {
-	m.destoryOnce.Do(func() {
-		m.isDestory = true
+func (m *Merge) Destroy() {
+	m.destroyOnce.Do(func() {
+		m.isDestroyed = true
 	})
 	m.wg.Wait()
 	close(m.shutdown)
@@ -87,8 +87,8 @@ func (m *Merge) Destory() {
 }
 
 func (m *Merge) Exec(key string, method func() (any, error)) (any, error) {
-	if m.isDestory {
-		return nil, errors.New("Merge Destoried")
+	if m.isDestroyed {
+		return nil, errors.New("Merge Destroyed")
 	}
 	m.wg.Add(1)
 	defer m.wg.Done()

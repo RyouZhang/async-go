@@ -49,7 +49,7 @@ func DefaultOption() *Option {
 	return &Option{maxWorker: 8, batchSize: 32, timeRange: 10}
 }
 
-func (opt *Option) WithMaxWoker(max int) *Option {
+func (opt *Option) WithMaxWorker(max int) *Option {
 	opt.maxWorker = max
 	return opt
 }
