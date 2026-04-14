@@ -37,6 +37,7 @@ type request struct {
 	tasks    []Task
 	count    int
 	callback chan *result
+	isAsync  bool
 }
 
 type Option struct {
@@ -91,6 +92,14 @@ func UpdateTaskGroup(taskGroup string, opt *Option) error {
 	return nil
 }
 
+func StopTaskGroup() {
+	taskGroupMux.Lock()
+	defer taskGroupMux.Unlock()
+	for _, tg := range taskGroupDic {
+		tg.Stop()
+	}
+}
+
 func Exec(ctx context.Context, taskGroup string, in Task) (any, error) {
 	taskGroupMux.RLock()
 	tg, ok := taskGroupDic[taskGroup]
@@ -142,4 +151,24 @@ func BatchExec(ctx context.Context, taskGroup string, in ...Task) map[string]any
 		}
 	}
 	return result
+}
+
+func AsyncExec(ctx context.Context, taskGroup string, in ...Task) {
+	taskGroupMux.RLock()
+	tg, ok := taskGroupDic[taskGroup]
+	taskGroupMux.RUnlock()
+
+	if !ok {
+		return
+	}
+
+	count := len(in)
+
+	req := &request{
+		tasks:    in,
+		count:    count,
+		callback: make(chan *result, count),
+		isAsync:  true,
+	}
+	tg.requestQueue <- req
 }

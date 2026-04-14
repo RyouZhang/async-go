@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/RyouZhang/async-go"
@@ -15,6 +16,8 @@ type taskGroup struct {
 
 	requestQueue chan *request
 	resultQueue  chan *result
+	wg           sync.WaitGroup
+	shutdown     chan struct{}
 
 	workerCount int
 	maxWorker   int
@@ -35,6 +38,7 @@ func newTaskGroup(name string, batchSize int, maxWorker int, timeRange int, meth
 		timeRange:    timeRange,
 		requestQueue: make(chan *request, 128),
 		resultQueue:  make(chan *result, 128),
+		shutdown:     make(chan struct{}),
 		workerCount:  0,
 		maxWorker:    maxWorker,
 		taskToReq:    make(map[string]*request),
@@ -50,10 +54,21 @@ func newTaskGroup(name string, batchSize int, maxWorker int, timeRange int, meth
 }
 
 func (tg *taskGroup) runloop() {
+	tg.wg.Add(1)
+	defer tg.wg.Done()
+
+	isStop := false
 	ctx := context.Background()
 	timer := time.NewTimer(time.Duration(tg.timeRange) * time.Millisecond)
 	for {
+		if isStop && len(tg.taskToReq) == 0 {
+			return
+		}
 		select {
+		case <-tg.shutdown:
+			{
+				isStop = true
+			}
 		case req := <-tg.requestQueue:
 			{
 				for i, _ := range req.tasks {
@@ -63,7 +78,9 @@ func (tg *taskGroup) runloop() {
 					if !ok {
 						tg.taskToReq[t.UniqueId()] = req
 					} else {
-						req.callback <- &result{key: t.UniqueId(), err: fmt.Errorf("duplicate unique id %s", t.UniqueId())}
+						if req.isAsync == false {
+							req.callback <- &result{key: t.UniqueId(), err: fmt.Errorf("duplicate unique id %s", t.UniqueId())}
+						}
 						req.count--
 						if req.count == 0 {
 							close(req.callback)
@@ -115,10 +132,12 @@ func (tg *taskGroup) runloop() {
 							t := target[i]
 							req, ok := tg.taskToReq[t.UniqueId()]
 							if ok {
-								req.callback <- &result{
-									key: t.UniqueId(),
-									val: res.val,
-									err: res.err,
+								if req.isAsync == false {
+									req.callback <- &result{
+										key: t.UniqueId(),
+										val: res.val,
+										err: res.err,
+									}
 								}
 								req.count--
 								if req.count == 0 {
@@ -132,11 +151,14 @@ func (tg *taskGroup) runloop() {
 				} else {
 					req, ok := tg.taskToReq[res.key]
 					if ok {
-						req.callback <- res
+						if req.isAsync == false {
+							req.callback <- res
+						}
 						req.count--
 						if req.count == 0 {
 							close(req.callback)
 						}
+
 						delete(tg.taskToReq, res.key)
 					}
 				}
@@ -269,4 +291,9 @@ func (tg *taskGroup) running(ctx context.Context, tasks []Task) {
 			err:  err,
 		}
 	}
+}
+
+func (tg *taskGroup) Stop() {
+	close(tg.shutdown)
+	tg.wg.Wait()
 }
