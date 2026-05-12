@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/RyouZhang/async-go"
@@ -19,8 +20,8 @@ type taskGroup struct {
 	wg           sync.WaitGroup
 	shutdown     chan struct{}
 
-	workerCount int
-	maxWorker   int
+	workerCount atomic.Int64
+	maxWorker   int64
 
 	taskToReq    map[string]*request
 	mergeTaskDic map[string][]Task
@@ -39,8 +40,7 @@ func newTaskGroup(name string, batchSize int, maxWorker int, timeRange int, meth
 		requestQueue: make(chan *request, 128),
 		resultQueue:  make(chan *result, 128),
 		shutdown:     make(chan struct{}),
-		workerCount:  0,
-		maxWorker:    maxWorker,
+		maxWorker:    int64(maxWorker),
 		taskToReq:    make(map[string]*request),
 		mergeTaskDic: make(map[string][]Task),
 		groupTaskDic: make(map[string][]Task),
@@ -123,7 +123,6 @@ func (tg *taskGroup) runloop() {
 			}
 		case res := <-tg.resultQueue:
 			{
-				tg.workerCount--
 				//check merge
 				if len(res.mkey) > 0 {
 					target, ok := tg.mergeTaskDic[res.mkey]
@@ -184,7 +183,7 @@ func (tg *taskGroup) timerSchedule(ctx context.Context) {
 }
 
 func (tg *taskGroup) scheduleGroupTask(ctx context.Context, max int) {
-	if tg.workerCount >= tg.maxWorker {
+	if tg.workerCount.Load() >= tg.maxWorker {
 		return
 	}
 
@@ -197,11 +196,11 @@ func (tg *taskGroup) scheduleGroupTask(ctx context.Context, max int) {
 		}
 
 		for {
-			if tg.workerCount >= tg.maxWorker {
+			if tg.workerCount.Load() >= tg.maxWorker {
 				goto CLEAN
 			}
 			if len(tasks) <= tg.batchSize {
-				tg.workerCount++
+				tg.workerCount.Add(1)
 				go tg.running(ctx, tasks)
 				delKeys = append(delKeys, gkey)
 				break
@@ -211,7 +210,7 @@ func (tg *taskGroup) scheduleGroupTask(ctx context.Context, max int) {
 			tasks = tasks[tg.batchSize:]
 			tg.groupTaskDic[gkey] = tasks
 
-			tg.workerCount++
+			tg.workerCount.Add(1)
 			go tg.running(ctx, target)
 		}
 	}
@@ -224,12 +223,12 @@ CLEAN:
 
 func (tg *taskGroup) scheduleTask(ctx context.Context) {
 	for {
-		if tg.workerCount >= tg.maxWorker || len(tg.tasks) == 0 {
+		if tg.workerCount.Load() >= tg.maxWorker || len(tg.tasks) == 0 {
 			break
 		}
 
 		t := tg.tasks[0]
-		tg.workerCount++
+		tg.workerCount.Add(1)
 		go tg.running(ctx, []Task{t})
 		if len(tg.tasks) == 1 {
 			tg.tasks = tg.tasks[:0]
@@ -240,6 +239,9 @@ func (tg *taskGroup) scheduleTask(ctx context.Context) {
 }
 
 func (tg *taskGroup) running(ctx context.Context, tasks []Task) {
+	defer func() {
+		tg.workerCount.Add(-1)
+	}()
 	_, err := async.Safety(func() (any, error) {
 		res, err := tg.method(tasks...)
 		if err != nil {
