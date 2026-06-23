@@ -2,6 +2,7 @@ package async
 
 import (
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
 )
@@ -18,8 +19,6 @@ type reply struct {
 	err    error
 }
 
-const mergeShardMask = 15 // 16 个分片，必须是 2^n - 1
-
 type mergeShard struct {
 	callbackDic map[string][]chan *reply
 	inputQueue  chan *request
@@ -29,13 +28,17 @@ type mergeShard struct {
 }
 
 type Merge struct {
-	shards      [mergeShardMask + 1]*mergeShard
+	shards      []*mergeShard
+	shardCount  uint32
 	isDestroyed atomic.Bool
 	destroyOnce sync.Once
 }
 
 func NewMerge() *Merge {
-	m := &Merge{}
+	// shardCount = GOMAXPROCS * 8，在 NewMerge 调用时求值，确保 GOMAXPROCS
+	// 已被容器感知组件（如 automaxprocs）等 init 校正；无需是 2 的幂（用取模映射）。
+	n := uint32(runtime.GOMAXPROCS(0) * 8)
+	m := &Merge{shards: make([]*mergeShard, n), shardCount: n}
 	for i := range m.shards {
 		s := &mergeShard{
 			callbackDic: make(map[string][]chan *reply),
@@ -50,13 +53,13 @@ func NewMerge() *Merge {
 }
 
 // shardIndex 用 FNV-1a 把 key 映射到分片，保证同 key 落同 shard（去重语义不变）。
-func shardIndex(key string) uint32 {
+func (m *Merge) shardIndex(key string) uint32 {
 	h := uint32(2166136261)
 	for i := 0; i < len(key); i++ {
 		h ^= uint32(key[i])
 		h *= 16777619
 	}
-	return h & mergeShardMask
+	return h % m.shardCount
 }
 
 func (s *mergeShard) runloop() {
@@ -115,7 +118,7 @@ func (m *Merge) Exec(key string, method func() (any, error)) (any, error) {
 		return nil, errors.New("Merge Destroyed")
 	}
 
-	s := m.shards[shardIndex(key)]
+	s := m.shards[m.shardIndex(key)]
 	s.wg.Add(1)
 	defer s.wg.Done()
 

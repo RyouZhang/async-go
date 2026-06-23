@@ -12,8 +12,8 @@ import (
 
 type taskGroup struct {
 	name      string
-	batchSize int
-	timeRange int
+	batchSize atomic.Int32
+	timeRange atomic.Int32
 
 	requestQueue chan *request
 	resultQueue  chan *result
@@ -21,7 +21,7 @@ type taskGroup struct {
 	shutdown     chan struct{}
 
 	workerCount atomic.Int64
-	maxWorker   int64
+	maxWorker   atomic.Int64
 
 	taskToReq    map[string]*request
 	mergeTaskDic map[string][]Task
@@ -35,18 +35,18 @@ type taskGroup struct {
 func newTaskGroup(name string, batchSize int, maxWorker int, timeRange int, method func(...Task) (map[string]any, error)) *taskGroup {
 	tg := &taskGroup{
 		name:         name,
-		batchSize:    batchSize,
-		timeRange:    timeRange,
 		requestQueue: make(chan *request, 128),
 		resultQueue:  make(chan *result, 128),
 		shutdown:     make(chan struct{}),
-		maxWorker:    int64(maxWorker),
 		taskToReq:    make(map[string]*request),
 		mergeTaskDic: make(map[string][]Task),
 		groupTaskDic: make(map[string][]Task),
 		tasks:        make([]Task, 0),
 		method:       method,
 	}
+	tg.batchSize.Store(int32(batchSize))
+	tg.timeRange.Store(int32(timeRange))
+	tg.maxWorker.Store(int64(maxWorker))
 
 	go tg.runloop()
 
@@ -59,7 +59,7 @@ func (tg *taskGroup) runloop() {
 
 	isStop := false
 	ctx := context.Background()
-	timer := time.NewTimer(time.Duration(tg.timeRange) * time.Millisecond)
+	timer := time.NewTimer(time.Duration(tg.timeRange.Load()) * time.Millisecond)
 	for {
 		if isStop && len(tg.taskToReq) == 0 {
 			return
@@ -166,14 +166,14 @@ func (tg *taskGroup) runloop() {
 		case <-timer.C:
 			{
 				tg.timerSchedule(ctx)
-				timer.Reset(time.Duration(tg.timeRange) * time.Millisecond)
+				timer.Reset(time.Duration(tg.timeRange.Load()) * time.Millisecond)
 			}
 		}
 	}
 }
 
 func (tg *taskGroup) schedule(ctx context.Context) {
-	tg.scheduleGroupTask(ctx, tg.batchSize)
+	tg.scheduleGroupTask(ctx, int(tg.batchSize.Load()))
 	tg.scheduleTask(ctx)
 }
 
@@ -183,9 +183,11 @@ func (tg *taskGroup) timerSchedule(ctx context.Context) {
 }
 
 func (tg *taskGroup) scheduleGroupTask(ctx context.Context, max int) {
-	if tg.workerCount.Load() >= tg.maxWorker {
+	maxWorker := tg.maxWorker.Load()
+	if tg.workerCount.Load() >= maxWorker {
 		return
 	}
+	batchSize := int(tg.batchSize.Load())
 
 	delKeys := make([]string, 0)
 	for gkey, _ := range tg.groupTaskDic {
@@ -196,18 +198,18 @@ func (tg *taskGroup) scheduleGroupTask(ctx context.Context, max int) {
 		}
 
 		for {
-			if tg.workerCount.Load() >= tg.maxWorker {
+			if tg.workerCount.Load() >= maxWorker {
 				goto CLEAN
 			}
-			if len(tasks) <= tg.batchSize {
+			if len(tasks) <= batchSize {
 				tg.workerCount.Add(1)
 				go tg.running(ctx, tasks)
 				delKeys = append(delKeys, gkey)
 				break
 			}
 
-			target := tasks[:tg.batchSize]
-			tasks = tasks[tg.batchSize:]
+			target := tasks[:batchSize]
+			tasks = tasks[batchSize:]
 			tg.groupTaskDic[gkey] = tasks
 
 			tg.workerCount.Add(1)
@@ -222,8 +224,9 @@ CLEAN:
 }
 
 func (tg *taskGroup) scheduleTask(ctx context.Context) {
+	maxWorker := tg.maxWorker.Load()
 	for {
-		if tg.workerCount.Load() >= tg.maxWorker || len(tg.tasks) == 0 {
+		if tg.workerCount.Load() >= maxWorker || len(tg.tasks) == 0 {
 			break
 		}
 

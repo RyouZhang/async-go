@@ -86,9 +86,9 @@ func UpdateTaskGroup(taskGroup string, opt *Option) error {
 	if false == ok {
 		return fmt.Errorf("invalid task group:%s", taskGroup)
 	}
-	t.batchSize = opt.batchSize
-	t.maxWorker = int64(opt.maxWorker)
-	t.timeRange = opt.timeRange
+	t.batchSize.Store(int32(opt.batchSize))
+	t.maxWorker.Store(int64(opt.maxWorker))
+	t.timeRange.Store(int32(opt.timeRange))
 	return nil
 }
 
